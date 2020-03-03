@@ -65,7 +65,7 @@ int main ( int argc, char* argv[] )
     /* COUNT        */   1, /* number of strings to be generated  */
   };
 
-  char chars[94] = { '0' };
+  char chars[94+1] = { '0' };
   char* string;
 
   /* parse the command-line arguments */
@@ -87,6 +87,7 @@ int main ( int argc, char* argv[] )
       generate ( string, flags[LENGTH], chars);
       printf( "%s\n", string );
     }
+  free(string);
 }
 
 
