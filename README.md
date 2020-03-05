@@ -9,10 +9,18 @@ The program is **not intended for serious security applications**.
 
 ## Dependencies
 
+### Build Time Dependencies
+
 No dependencies besides C standard library.
 Any C compiler supporting C99 or later should build the program.
 
 Tested with GCC on Debian GNU/Linux.
+
+### Run Time Dependencies
+
+The program reads data from the host system's `/dev/urandom` device to seed
+its pseudo-random number generator. That device is only available on
+Unix-flavored systems. A work-around for other systems ought to be trivial.
 
 ## Building
 

@@ -23,7 +23,7 @@
 
 /* global constants */
 #define PROG_NAME "pwgen"
-#define VERSION "0.1.0"
+#define VERSION "0.2.0"
 
 /* exit codes on error */
 #define E_BADARGS 1
@@ -49,6 +49,8 @@
 void bail ( int reason, char* msg );
 void generate ( char string[], int length, char chars[] );
 void parseargs ( int argc, char* argv[], int flags[] );
+int rand_range ( int upper_bound );
+void seed_RNG ();
 void usage ( int verbosity );
 void version ();
 
@@ -81,7 +83,7 @@ int main ( int argc, char* argv[] )
   string = calloc ( flags[LENGTH] + 1, sizeof ( char * ) );
 
   /* generate string(s) */
-  srand( time ( NULL ) );
+  seed_RNG();
   for ( i = 0 ; i < flags[COUNT] ; i++ )
     {
       generate ( string, flags[LENGTH], chars);
@@ -108,17 +110,17 @@ void bail ( int reason, char* msg )
 void generate ( char string[], int length, char chars[] )
 {
   int i = 0;
-  int char_range = -1;
+  int len_chars = -1;
 
 
   /* check how many chars are available */
-  while ( chars[++char_range] != '\0' )
+  while ( chars[++len_chars] != '\0' )
     ;
 
   /* generate the random string */
   for ( i = 0 ; i < length ; i++ )
     {
-      string[i] = chars[rand () % char_range];
+      string[i] = chars[rand_range ( len_chars )];
     }
 
   string[length] = '\0';
@@ -240,6 +242,47 @@ void parseargs ( int argc, char* argv[], int flags[] )
 
       i++;
     }
+}
+
+/**
+ * Return a random integer from the range [0, upper_bound)
+ *
+ * Remember to call seed_RNG once first!
+ */
+int rand_range ( int upper_bound )
+{
+	int reject_bound;
+	int r;
+
+	/* Since stdlib's rand() is uniformly distributed, we use rejection
+	 * sampling to ensure that the result is also uniformly distributed
+	 * on our range [0, upper_bound)
+	 */
+	reject_bound = RAND_MAX - (RAND_MAX % upper_bound);
+	while ( (r = rand()) >= reject_bound );
+
+	return r % upper_bound;
+}
+
+/**
+ * Seed the pseudo-random number generator
+ */
+void seed_RNG ()
+{
+  FILE *fp;
+  unsigned int rseed;
+
+  // This would be weak! Also a problem when executing program in a loop.
+  //srand( time ( NULL ) );
+
+  /* Read from /dev/urandom since it's guaranteed to not block on read,
+   * unlike /dev/random
+   */
+  fp = fopen ( "/dev/urandom", "rb");
+  fread (&rseed, sizeof(rseed), 1, fp);
+  fclose (fp);
+  srand (rseed);
+  //XXX Error handling
 }
 
 
