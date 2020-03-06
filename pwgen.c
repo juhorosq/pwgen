@@ -19,23 +19,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <unistd.h>
 
 /* global constants */
 #define PROG_NAME "pwgen"
-#define VERSION "0.2.0"
+#define VERSION "0.3.0"
 
 /* exit codes on error */
 #define E_BADARGS 1
 
-/* number of option flags recognized */
-#define NUMBER_OF_FLAGS 5
-/* option flags */
-#define LENGTH       0
-#define MIN_CHAR     1
-#define MAX_CHAR     2
-#define CUSTOM_CHARS 3
-#define COUNT        4
+struct Configuration
+{
+  int count;       // how many random passwords to generate
+  int length;      // the length of each generated password
+  int len_symbols; // length of the allowed characters array
+  char *symbols;   // array of characters allowed in password generation
+};
 
 /* arguments for bail() */
 #define BADARGS 1
@@ -47,49 +46,48 @@
 
 
 void bail ( int reason, char* msg );
-void generate ( char string[], int length, char chars[] );
-void parseargs ( int argc, char* argv[], int flags[] );
+void generate ( char password[], int length, char chars[] );
+void parseargs ( int argc, char* argv[], struct Configuration config );
 int rand_range ( int upper_bound );
 void seed_RNG ();
 void usage ( int verbosity );
 void version ();
 
 
-int main ( int argc, char* argv[] )
+int main (int argc, char **argv)
 {
-  int i = 0;
-  int flags[NUMBER_OF_FLAGS] = {
-    /******flag**** **default* *******description******************/
-    /* LENGTH       */   8, /* length of the generated string(s)  */
-    /* MIN_CHAR     */ '!', /* first character of ascii range     */
-    /* MAX_CHAR     */ '~', /* last character of ascii range      */
-    /* CUSTOM_CHARS */   0, /* (false) chars specified one by one */
-    /* COUNT        */   1, /* number of strings to be generated  */
-  };
+  int i;
+  char* password;
 
-  char chars[94+1] = { '0' };
-  char* string;
+  struct Configuration config;
+  /* defaults */
+  config.count = 1;
+  config.length = 8;
+  config.len_symbols = 94;
+  config.symbols = (char *) calloc(config.len_symbols + 1, sizeof(char)); // +1 to 0-terminate
+  if (config.symbols != NULL) {
+	  /* by default allow all printable non-space ASCII characters (33-126) */
+	  for (i = 0; i < config.len_symbols; i++)
+		  config.symbols[i] = '!' + i;
+  }
+  else {
+	  exit(1); // memory allocation failed
+  }
 
-  /* parse the command-line arguments */
-  parseargs ( argc, argv, flags );
+  /* parse command-line arguments */
+  parseargs ( argc, argv, config );
 
-  /* initialize the usable characters' array (CUSTOM needs work) */
-  for ( i = 0 ; i < 94 ; i++)
-    {
-      chars[i] = '!' + i;
-    }
-  chars[i] = '\0';
+  password = (char *) calloc(config.length + 1, sizeof(char *));
 
-  string = calloc ( flags[LENGTH] + 1, sizeof ( char * ) );
-
-  /* generate string(s) */
+  /* generate password(s) */
   seed_RNG();
-  for ( i = 0 ; i < flags[COUNT] ; i++ )
+  for ( i = 0 ; i < config.count ; i++ )
     {
-      generate ( string, flags[LENGTH], chars);
-      printf( "%s\n", string );
+      generate ( password, config.length, config.symbols);
+      printf( "%s\n", password );
     }
-  free(string);
+  free(password);
+  free(config.symbols);
 }
 
 
@@ -107,7 +105,7 @@ void bail ( int reason, char* msg )
 }
 
 
-void generate ( char string[], int length, char chars[] )
+void generate (char *password, int length, char *chars)
 {
   int i = 0;
   int len_chars = -1;
@@ -117,17 +115,17 @@ void generate ( char string[], int length, char chars[] )
   while ( chars[++len_chars] != '\0' )
     ;
 
-  /* generate the random string */
+  /* generate the random password */
   for ( i = 0 ; i < length ; i++ )
     {
-      string[i] = chars[rand_range ( len_chars )];
+      password[i] = chars[rand_range(len_chars)];
     }
 
-  string[length] = '\0';
+  password[length] = '\0';
 }
 
 
-void parseargs ( int argc, char* argv[], int flags[] )
+void parseargs ( int argc, char* argv[], struct Configuration config )
 {
   int i,j;
   char* arg;
@@ -184,7 +182,7 @@ void parseargs ( int argc, char* argv[], int flags[] )
 			  j++;
 			}
 
-		      flags[COUNT] = atoi ( argv[i] );
+		      config.count = atoi ( argv[i] );
 		      continue;
 		    }
 		  break;
@@ -215,7 +213,7 @@ void parseargs ( int argc, char* argv[], int flags[] )
 			  j++;
 			}
 
-		      flags[LENGTH] = atoi ( argv[i] );
+		      config.length = atoi ( argv[i] );
 		      continue;
 		    }
 		  break;
