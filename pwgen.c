@@ -23,7 +23,7 @@
 
 /* global constants */
 #define PROG_NAME "pwgen"
-#define VERSION "0.3.0"
+#define VERSION "0.3.1"
 
 /* exit codes on error */
 #define E_BADARGS 1
@@ -47,7 +47,7 @@ struct Configuration
 
 void bail ( int reason, char* msg );
 void generate ( char password[], int length, char chars[] );
-void parseargs ( int argc, char* argv[], struct Configuration config );
+void parseargs ( int argc, char* argv[], struct Configuration *config );
 int rand_range ( int upper_bound );
 void seed_RNG ();
 void usage ( int verbosity );
@@ -75,7 +75,7 @@ int main (int argc, char **argv)
   }
 
   /* parse command-line arguments */
-  parseargs ( argc, argv, config );
+  parseargs ( argc, argv, &config );
 
   password = (char *) calloc(config.length + 1, sizeof(char *));
 
@@ -125,7 +125,7 @@ void generate (char *password, int length, char *chars)
 }
 
 
-void parseargs ( int argc, char* argv[], struct Configuration config )
+void parseargs ( int argc, char* argv[], struct Configuration *config )
 {
   int i,j;
   char* arg;
@@ -182,7 +182,7 @@ void parseargs ( int argc, char* argv[], struct Configuration config )
 			  j++;
 			}
 
-		      config.count = atoi ( argv[i] );
+		      config->count = atoi ( argv[i] );
 		      continue;
 		    }
 		  break;
@@ -213,7 +213,7 @@ void parseargs ( int argc, char* argv[], struct Configuration config )
 			  j++;
 			}
 
-		      config.length = atoi ( argv[i] );
+		      config->length = atoi ( argv[i] );
 		      continue;
 		    }
 		  break;
