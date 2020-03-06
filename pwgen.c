@@ -14,7 +14,7 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-  
+
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,13 +23,12 @@
 
 /* global constants */
 #define PROG_NAME "pwgen"
-#define VERSION "0.3.1"
+#define VERSION "0.4.0"
 
 /* exit codes on error */
 #define E_BADARGS 1
 
-struct Configuration
-{
+struct Configuration {
   int count;       // how many random passwords to generate
   int length;      // the length of each generated password
   int len_symbols; // length of the allowed characters array
@@ -46,15 +45,16 @@ struct Configuration
 
 
 void bail ( int reason, char* msg );
-void generate ( char password[], int length, char chars[] );
-void parseargs ( int argc, char* argv[], struct Configuration *config );
-int rand_range ( int upper_bound );
-void seed_RNG ();
+
+char *str_randomize(char *str, int length, const char *symbols);
+void parse_args(int argc, char **argv, struct Configuration *config);
+int rand_range(int upper_bound);
+void seed_RNG();
+
 void usage ( int verbosity );
-void version ();
 
 
-int main (int argc, char **argv)
+int main(int argc, char **argv)
 {
   int i;
   char* password;
@@ -75,15 +75,16 @@ int main (int argc, char **argv)
   }
 
   /* parse command-line arguments */
-  parseargs ( argc, argv, &config );
+  parse_args(argc, argv, &config);
 
   password = (char *) calloc(config.length + 1, sizeof(char *));
 
   /* generate password(s) */
   seed_RNG();
+  //XXX handle return value
   for ( i = 0 ; i < config.count ; i++ )
     {
-      generate ( password, config.length, config.symbols);
+      str_randomize(password, config.length, config.symbols);
       printf( "%s\n", password );
     }
   free(password);
@@ -104,28 +105,38 @@ void bail ( int reason, char* msg )
     }
 }
 
-
-void generate (char *password, int length, char *chars)
+/* Overwrite the first length+1 characters of str with random characters from
+ * the (zero-terminated) string symbols. The length+1st character of str will
+ * be set to '\0' and all preceding characters are guaranteed to not be '\0'.
+ *
+ * The appearance of every character from symbols is equally likely; if a
+ * character is repeated in symbols string, it is twice as likely to appear in
+ * str, etc.
+ */
+char *str_randomize(char *str, int length, const char *symbols)
 {
   int i = 0;
-  int len_chars = -1;
+  int len_symbols = -1;
 
 
-  /* check how many chars are available */
-  while ( chars[++len_chars] != '\0' )
+ // count characters in the symbols string
+  while (symbols[++len_symbols] != '\0')
     ;
 
-  /* generate the random password */
   for ( i = 0 ; i < length ; i++ )
     {
-      password[i] = chars[rand_range(len_chars)];
+      str[i] = symbols[rand_range(len_symbols)];
     }
+  str[length] = '\0';
 
-  password[length] = '\0';
+  return str;
 }
 
-
-void parseargs ( int argc, char* argv[], struct Configuration *config )
+/* Process the command line and set program configuration accordingly.
+ *
+ * Command line interface is GNU getopt style.
+ */
+void parse_args(int argc, char **argv, struct Configuration *config)
 {
   int i,j;
   char* arg;
@@ -242,12 +253,11 @@ void parseargs ( int argc, char* argv[], struct Configuration *config )
     }
 }
 
-/**
- * Return a random integer from the range [0, upper_bound)
+/* Return a random integer from the range [0, upper_bound)
  *
- * Remember to call seed_RNG once first!
+ * Remember to call seed_RNG once (and only once) first!
  */
-int rand_range ( int upper_bound )
+int rand_range(int upper_bound)
 {
 	int reject_bound;
 	int r;
@@ -257,13 +267,15 @@ int rand_range ( int upper_bound )
 	 * on our range [0, upper_bound)
 	 */
 	reject_bound = RAND_MAX - (RAND_MAX % upper_bound);
-	while ( (r = rand()) >= reject_bound );
+	while ((r = rand()) >= reject_bound);
 
 	return r % upper_bound;
 }
 
-/**
- * Seed the pseudo-random number generator
+/* Seed the pseudo-random number generator
+ *
+ * We get the seed from /dev/urandom since it's guaranteed to not block on read,
+ * unlike /dev/random. Obviously, this only works on (most) *nix systems.
  */
 void seed_RNG ()
 {
@@ -273,9 +285,6 @@ void seed_RNG ()
   // This would be weak! Also a problem when executing program in a loop.
   //srand( time ( NULL ) );
 
-  /* Read from /dev/urandom since it's guaranteed to not block on read,
-   * unlike /dev/random
-   */
   fp = fopen ( "/dev/urandom", "rb");
   fread (&rseed, sizeof(rseed), 1, fp);
   fclose (fp);
