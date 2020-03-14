@@ -24,7 +24,7 @@
 
 // global constants
 #define PROG_NAME "pwgen"
-#define VERSION "0.4.3"
+#define VERSION "0.4.4"
 
 #ifndef DEBUG_PRINT
 #define DEBUG_PRINT 0
@@ -159,7 +159,7 @@ int main(int argc, char **argv)
  */
 char *str_randomize(char *str, size_t n, const char *symbols, size_t len_symbols)
 {
-	int i;
+	size_t i;
 
 	for (i = 0 ; i < n ; i++) {
 		str[i] = symbols[rand_range(len_symbols)];
@@ -184,7 +184,9 @@ int rand_range(int upper_bound)
 	 * we use rejection sampling to ensure that the result is also
 	 * uniformly distributed on our range [0, upper_bound - 1].
 	 */
+	assert(upper_bound <= RAND_MAX);  //XXX Bad form: input-dependent
 	reject_bound = RAND_MAX - (RAND_MAX % upper_bound);
+	assert(reject_bound % upper_bound == 0);
 	while ((r = rand()) >= reject_bound);
 
 	return r % upper_bound;
@@ -358,7 +360,7 @@ char *symset_alloc(const char *src, size_t len)
  */
 struct Node *mknode(char *name, char *data, size_t *size)
 {
-	struct Node *newnode = malloc(sizeof(struct Node));
+	struct Node *newnode = malloc(sizeof(*newnode));
 
 	newnode->name = calloc(strlen(name) + 1, sizeof(char)); // last char (+1) initialized to 0
 	strcpy(newnode->name, name);
