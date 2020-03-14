@@ -10,7 +10,7 @@
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  *  GNU General Public License for more details.
- *                                                                         
+ *
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
@@ -24,7 +24,7 @@
 
 // global constants
 #define PROG_NAME "pwgen"
-#define VERSION "0.4.1"
+#define VERSION "0.4.2"
 
 #ifndef DEBUG_PRINT
 #define DEBUG_PRINT 0
@@ -103,6 +103,11 @@ int rand_range(int upper_bound);
 char *str_randomize(char *str, size_t len, const char *symbols, size_t len_symbols);
 
 
+/* This program generates randomized passwords out of a customizable set of
+ * characters.
+ *
+ * For more details, run the program with -h flag or read the source ;-)
+ */
 int main(int argc, char **argv)
 {
   struct Configuration conf;
@@ -137,12 +142,20 @@ int main(int argc, char **argv)
 
 
 /* Overwrite the first n characters of str with random characters from
- * the string symsbols, and set the n+1st character of str to '\0'.
- * XXX and all preceding characters are guaranteed to not be '\0'.
+ * the symbols string, and set the n+1st character of str to '\0'.
  *
  * The appearance of every character from symbols is equally likely; if a
  * character is repeated in symbols string, it is twice as likely to appear in
  * str, etc.
+ *
+ * If you want to guarantee that none of the first n characters will be '\0',
+ * just make sure that len_symbols == strlen(symbols), e.g., by using
+ * strlen(symbols) as the last argument.
+ * We avoid doing this in the function body to make it easier for the compiler
+ * to optimize; I'm not sure if this has any practical performance effect.
+ * This guarantee should be in effect anyways, unless the user somehow manages
+ * to sneak in a mid-string '\0' through command line options, or I screwed
+ * up my string handling.
  */
 char *str_randomize(char *str, size_t n, const char *symbols, size_t len_symbols)
 {
@@ -156,18 +169,20 @@ char *str_randomize(char *str, size_t n, const char *symbols, size_t len_symbols
 	return str;
 }
 
-/* Return a random integer from the range [0, upper_bound)
+/* Return a (uniformly distributed) random integer from the
+ * interval [0, upper_bound - 1].
+ * Note: upper_bound may not exceed RAND_MAX.
  *
- * Remember to call seed_RNG once (and only once) first!
+ * Remember to seed the RNG first!
  */
 int rand_range(int upper_bound)
 {
 	int reject_bound;
 	int r;
 
-	/* Since stdlib's rand() is uniformly distributed, we use rejection
-	 * sampling to ensure that the result is also uniformly distributed
-	 * on our range [0, upper_bound)
+	/* Since stdlib's rand() is uniformly distributed on [0,RAND_MAX],
+	 * we use rejection sampling to ensure that the result is also
+	 * uniformly distributed on our range [0, upper_bound - 1].
 	 */
 	reject_bound = RAND_MAX - (RAND_MAX % upper_bound);
 	while ((r = rand()) >= reject_bound);
@@ -175,7 +190,7 @@ int rand_range(int upper_bound)
 	return r % upper_bound;
 }
 
-/* Seed the pseudo-random number generator
+/* Seed the pseudo-random number generator.
  *
  * We get the seed from /dev/urandom since it's guaranteed to not block on read,
  * unlike /dev/random. Obviously, this only works on (most) *nix systems.
@@ -195,10 +210,10 @@ void seed_RNG ()
   //XXX Error handling
 }
 
-/* Initialize the predefined symbol sets
+/* Initialize the predefined symbol sets.
  *
  * N.B. the len_XYZ variables in ss contain the number of characters in the
- * corresponding XYZ string, excluding the terminating zero! That is,
+ * corresponding XYZ string, excluding the terminating zero. That is,
  * strlen(XYZ) == len_XYZ, and the memory allocated for string XYZ is
  * equal to (len_XYZ+1)*sizeof(char).
  *
@@ -212,34 +227,34 @@ void init_symbolsets(struct SymbolSets *ss)
 {
 	struct Node *p;  // list iterator
 	char syms[128];  // buffer for building strings
-	int len;         // length of string in the buffer
+	size_t len;      // length of string in the buffer
 
-	// printable ASCII characters, including space (32-126)
+	// printable ASCII characters, including space (32--126)
 	len = fill_ascii_range(syms, ' ', '~');
 	ss->asciip = symset_alloc(syms, len);
 	ss->len_asciip = len;
-	// create the first node in our linked list of symbol sets
+	// the first node in our linked list must be manually connected
 	p = ss->iter = mknode("asciip", ss->asciip, &(ss->len_asciip));
 
-	// printable ASCII characters, without space (33-126)
+	// printable ASCII characters, without space (33--126)
 	len = fill_ascii_range(syms, '!', '~');
 	ss->asciipns = symset_alloc(syms, len);
 	ss->len_asciipns = len;
 	p = list_append(p, mknode("asciipns", ss->asciipns, &(ss->len_asciipns)));
 
-	// numbers 0-9 (ASCII 48-57)
+	// numbers 0-9 (ASCII 48--57)
 	len = fill_ascii_range(syms, '0', '9');
 	ss->numeric = symset_alloc(syms, len);
 	ss->len_numeric = len;
 	p = list_append(p, mknode("num", ss->numeric, &(ss->len_numeric)));
 
-	// uppercase letters (65-90)
+	// uppercase letters (65--90)
 	len = fill_ascii_range(syms, 'A', 'Z');
 	ss->ALPHABETIC = symset_alloc(syms, len);
 	ss->len_ALPHABETIC = len;
 	p = list_append(p, mknode("ALPHA", ss->ALPHABETIC, &(ss->len_ALPHABETIC)));
 
-	// lowercase letters (97-122)
+	// lowercase letters (97--122)
 	len = fill_ascii_range(syms, 'a', 'z');
 	ss->alphabetic = symset_alloc(syms, len);
 	ss->len_alphabetic = len;
@@ -277,7 +292,7 @@ void init_symbolsets(struct SymbolSets *ss)
 	ss->len_Alnum = len;
 	p = list_append(p, mknode("Alnum", ss->Alnum, &(ss->len_Alnum)));
 
-	// punctuation characters (33-47, 58-64, 91-96, 123-126)
+	// punctuation characters (33--47, 58--64, 91--96, 123--126)
 	len = fill_ascii_range(syms, '!', '/');
 	len += fill_ascii_range(syms + len, ':', '@');
 	len += fill_ascii_range(syms + len, '[', '`');
@@ -305,14 +320,18 @@ void free_symbolsets(struct SymbolSets *ss)
 
 /* Replace characters from the start of the string dest with the ASCII values
  * between characters first and last (inclusive).
- * Return the number of characters replaced (i.e. last - first + 1).
+ * Return the number of characters replaced (i.e. #last - #first + 1).
+ *
+ * Make sure that dest has enough space to hold the characters.
  */
 size_t fill_ascii_range(char *dest, char first, char last)
 {
 	int i;
+
 	for (i = 0; first + i <= last; i++)
 		dest[i] = first + i;
 	assert(last - first + 1 == i);
+
 	return i;
 }
 
@@ -323,27 +342,14 @@ size_t fill_ascii_range(char *dest, char first, char last)
  */
 char *symset_alloc(const char *src, size_t len)
 {
-	char *dest = malloc((len + 1) * sizeof(char));
+	char *dest = malloc((len + 1) * sizeof(char)); // +1 for '\0'
 	strncpy(dest, src, len);
-	dest[len] = '\0';
+	dest[len] = '\0';  // if strlen(src) < len, strncpy will pad with zeroes
 
 	return dest;
 }
 
-/* Add *newnode to the end of the linked list to which the *llist belongs.
- * Return a pointer to the newly added node.
- */
-struct Node *list_append(struct Node *llist, struct Node *newnode)
-{
-	struct Node *p = llist;
-
-	while (p->next != NULL) // seek to the end of the list
-		p = p->next;
-	p->next = newnode;
-	return p->next;
-}
-
-/* Allocate memory for a new linked list node for our SymbolSets list,
+/* Allocate memory for a new linked list Node for our SymbolSets list,
  * initialize it with values from (name, data, size) and return a pointer
  * to this node.
  * Note that mknode will produce a detached node, you have to add it
@@ -364,8 +370,24 @@ struct Node *mknode(char *name, char *data, size_t *size)
 	return newnode;
 }
 
+/* Add *newnode to the end of the linked list that contains the *llist Node.
+ * Return a pointer to the newly added node.
+ *
+ * Note that list_append cannot add to an empty list. Use mknode to create
+ * a list (of a single node) first and then list_append more to that node.
+ */
+struct Node *list_append(struct Node *llist, struct Node *newnode)
+{
+	struct Node *p = llist;
+
+	while (p->next != NULL) // seek to the end of the list
+		p = p->next;
+	p->next = newnode;
+	return p->next;
+}
+
 /* Find the first occurrence of a node named key in the linked list after
- * (and including) the position pointed to by *pos. Return a pointer to that
+ * (and including) the position pointed to by pos. Return a pointer to that
  * node, or NULL if no match was found until end of list was reached.
  */
 struct Node *list_seek(struct Node *pos, const char *key)
@@ -390,17 +412,14 @@ struct Node *list_seek(struct Node *pos, const char *key)
 void parse_args(int argc, char **argv, struct Configuration *conf, const struct SymbolSets *ss)
 {
   int c;
-  //char *cvalue = NULL;
   struct Node *p;
 
-  // apply defaults
+  // apply defaults (symbols default is applied at the end if nothing is selected)
   conf->count = 1;
   conf->pwlen = 8;
   conf->len_symbols = 0;
-  //conf->symbols = NULL;
-  //conf.len_symbols = 94;
+  // append_symbols calls realloc on conf->symbols, so it must be allocated already
   conf->symbols = calloc(conf->len_symbols + 1, sizeof(char)); // +1 to 0-terminate
-  // by default allow all printable non-space ASCII characters (33-126)
 
   // process command line options
   while ((c = getopt(argc, argv, "S:c:l:hv")) != -1)
@@ -428,7 +447,7 @@ void parse_args(int argc, char **argv, struct Configuration *conf, const struct 
 	    break;
 	case '?': // invalid option
 	    exit(EXIT_FAILURE);
-	case ':': // option argument missing // will not happen unless option string starts with ':'
+	case ':': // option argument missing // will not happen unless option string starts with ':'?
 	    exit(EXIT_FAILURE);
 	default:
 	    exit(EXIT_FAILURE);
@@ -497,6 +516,10 @@ void control(enum control_state severity, char *message)
 	}
 }
 
+/* Print instructions on how to use the program.
+ *
+ * usage_flag argument controls which part of the information is displayed.
+ */
 void usage (enum usage_flag topic, const struct SymbolSets *ss)
 {
   struct Node *p;
@@ -537,19 +560,6 @@ void usage (enum usage_flag topic, const struct SymbolSets *ss)
 		  printf("  %-15s%s\n", p->name, p->data);
 		  p = p->next;
 	  }
-/*
-      printf("  %s\t%s\n", "asciip", "printable ASCII characters including space");
-      printf("  %s\t%s\n", "asciipns", "printable ASCII characters without space");
-      printf("  %s\t%s\n", "numeric", "numbers 0-9");
-      printf("  %s\t%s\n", "ALPHA", "uppercase letters");
-      printf("  %s\t%s\n", "alpha", "lowercase letters");
-      printf("  %s\t%s\n", "Alpha", "all letters");
-      printf("  %s\t%s\n", "ALNUM", "uppercase alphanumeric");
-      printf("  %s\t%s\n", "alnum", "lowercase alphanumeric");
-      printf("  %s\t%s\n", "Alnum", "all alphanumeric");
-      printf("  %s\t%s\n", "punct", "punctuation");
-      printf("  \n");
-*/
       break;
   case version:
       printf("%s version %s\n%s\n%s\n%s\n", PROG_NAME, VERSION,
