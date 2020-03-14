@@ -24,7 +24,7 @@
 
 // global constants
 #define PROG_NAME "pwgen"
-#define VERSION "0.4.4"
+#define VERSION "0.4.5"
 
 #ifndef DEBUG_PRINT
 #define DEBUG_PRINT 0
@@ -36,7 +36,7 @@ void debug_info(const char *file, int line, const char *func, const char *fmt, .
 
 	fprintf(stderr, "%s:%d:%s: ", file, line ,func);
 	va_start(argp, fmt);
-		vfprintf(stderr, fmt, argp);
+	vfprintf(stderr, fmt, argp);
 	va_end(argp);
 	fprintf(stderr, "\n");
 }
@@ -45,10 +45,10 @@ void debug_info(const char *file, int line, const char *func, const char *fmt, .
 	debug_info(__FILE__, __LINE__, __func__, fmt, ##__VA_ARGS__); } while (0)
 
 struct Configuration {
-  int count;           // how many random passwords to generate
-  size_t pwlen;        // the length of each generated password
-  size_t len_symbols;  // length of the string containing allowed characters
-  char *symbols;       // string of characters allowed in password generation
+	int count;           // how many random passwords to generate
+	size_t pwlen;        // the length of each generated password
+	size_t len_symbols;  // length of the string containing allowed characters
+	char *symbols;       // string of characters allowed in password generation
 };
 size_t append_symbols(struct Configuration *conf, const char *src);
 
@@ -110,34 +110,34 @@ char *str_randomize(char *str, size_t len, const char *symbols, size_t len_symbo
  */
 int main(int argc, char **argv)
 {
-  struct Configuration conf;
-  struct SymbolSets ss;
+	struct Configuration conf;
+	struct SymbolSets ss;
 
-  int i;
-  char* password;
+	int i;
+	char* password;
 
-  init_symbolsets(&ss);               // generate symbol sets provided by the program
-  parse_args(argc, argv, &conf, &ss); // configure by command line & apply defaults
-  free_symbolsets(&ss);               // symbols to use are now in conf.symbols
+	init_symbolsets(&ss);               // generate symbol sets provided by the program
+	parse_args(argc, argv, &conf, &ss); // configure by command line & apply defaults
+	free_symbolsets(&ss);               // symbols to use are now in conf.symbols
 
-  // generate random password(s)
-  srand(get_RNG_seed());
-  password = calloc(conf.pwlen + 1, sizeof(*password)); // calloc (+1) ensures zero termination
-  for (i = 0 ; i < conf.count ; i++) {
-      str_randomize(password, conf.pwlen, conf.symbols, conf.len_symbols);
-      printf("%s\n", password);
-  }
+	// generate random password(s)
+	srand(get_RNG_seed());
+	password = calloc(conf.pwlen + 1, sizeof(*password)); // calloc (+1) ensures zero termination
+	for (i = 0 ; i < conf.count ; i++) {
+		str_randomize(password, conf.pwlen, conf.symbols, conf.len_symbols);
+		printf("%s\n", password);
+	}
 
 #ifndef NDEBUG
-  debug_print("freeing memory before exit to appease leak sanitizer.");
-  debug_print("freeing: 0x%06x: %s = {%s}", password, "password", password);
-  free(password);
-  debug_print("freeing: 0x%06x: %s = {%s}", conf.symbols, "conf.symbols", conf.symbols);
-  free(conf.symbols);
-  debug_print("exiting.");
+	debug_print("freeing memory before exit to appease leak sanitizer.");
+	debug_print("freeing: 0x%06x: %s = {%s}", password, "password", password);
+	free(password);
+	debug_print("freeing: 0x%06x: %s = {%s}", conf.symbols, "conf.symbols", conf.symbols);
+	free(conf.symbols);
+	debug_print("exiting.");
 #endif
 
-  return EXIT_SUCCESS;
+	return EXIT_SUCCESS;
 }
 
 
@@ -200,15 +200,15 @@ int rand_range(int upper_bound)
  */
 unsigned int get_RNG_seed()
 {
-  FILE *fp;
-  unsigned int rseed;
+	FILE *fp;
+	unsigned int rseed;
 
-  fp = fopen("/dev/urandom", "rb");
-  fread(&rseed, sizeof(rseed), 1, fp);
-  fclose(fp);
-  //XXX Error handling
+	fp = fopen("/dev/urandom", "rb");
+	fread(&rseed, sizeof(rseed), 1, fp);
+	fclose(fp);
+	//XXX Error handling
 
-  return rseed;
+	return rseed;
 }
 
 /* Initialize the predefined symbol sets.
@@ -412,54 +412,54 @@ struct Node *list_seek(struct Node *pos, const char *key)
  */
 void parse_args(int argc, char **argv, struct Configuration *conf, const struct SymbolSets *ss)
 {
-  int c;
-  struct Node *p;
+	int c;
+	struct Node *p;
 
-  // apply defaults (symbols default is applied at the end if nothing is selected)
-  conf->count = 1;
-  conf->pwlen = 8;
-  conf->len_symbols = 0;
-  // append_symbols calls realloc on conf->symbols, so it must be allocated already
-  conf->symbols = calloc(conf->len_symbols + 1, sizeof(char)); // +1 to 0-terminate
+	// apply defaults (symbols default is applied at the end if nothing is selected)
+	conf->count = 1;
+	conf->pwlen = 8;
+	conf->len_symbols = 0;
+	// append_symbols calls realloc on conf->symbols, so it must be allocated already
+	conf->symbols = calloc(conf->len_symbols + 1, sizeof(char)); // +1 to 0-terminate
 
-  // process command line options
-  while ((c = getopt(argc, argv, "S:c:l:hv")) != -1)
-	switch (c) {
-	case 'S':
-		if ((p = list_seek(ss->iter, optarg)) != NULL) {
-			append_symbols(conf, p->data);
-		} else {
-			printf("No such symbol set: %s\n", optarg);
-			exit(EXIT_FAILURE);
+	// process command line options
+	while ((c = getopt(argc, argv, "S:c:l:hv")) != -1)
+		switch (c) {
+			case 'S':
+				if ((p = list_seek(ss->iter, optarg)) != NULL) {
+					append_symbols(conf, p->data);
+				} else {
+					printf("No such symbol set: %s\n", optarg);
+					exit(EXIT_FAILURE);
+				}
+				break;
+			case 'c':
+				conf->count = atoi(optarg);
+				break;
+			case 'h':
+				usage(full, ss);
+				exit(EXIT_SUCCESS);
+			case 'l':
+				conf->pwlen = atoi(optarg);
+				break;
+			case 'v':
+				usage(version, ss);
+				exit(EXIT_SUCCESS);
+				break;
+			case '?': // invalid option
+				exit(EXIT_FAILURE);
+			case ':': // option argument missing // will not happen unless option string starts with ':'?
+				exit(EXIT_FAILURE);
+			default:
+				exit(EXIT_FAILURE);
 		}
-	    break;
-	case 'c':
-		conf->count = atoi(optarg);
-	    break;
-	case 'h':
-		usage(full, ss);
-	    exit(EXIT_SUCCESS);
-	case 'l':
-		conf->pwlen = atoi(optarg);
-	    break;
-	case 'v':
-		usage(version, ss);
-	    exit(EXIT_SUCCESS);
-	    break;
-	case '?': // invalid option
-	    exit(EXIT_FAILURE);
-	case ':': // option argument missing // will not happen unless option string starts with ':'?
-	    exit(EXIT_FAILURE);
-	default:
-	    exit(EXIT_FAILURE);
-	}
 
-  // process non-option arguments as (partial) character pool definitions
-  for (c = optind; c < argc; c++) {
-	  append_symbols(conf, argv[c]);
-  }
-  if (conf->len_symbols == 0) // use default symbols if none were selected
-	  append_symbols(conf, ss->asciipns);
+	// process non-option arguments as (partial) character pool definitions
+	for (c = optind; c < argc; c++) {
+		append_symbols(conf, argv[c]);
+	}
+	if (conf->len_symbols == 0) // use default symbols if none were selected
+		append_symbols(conf, ss->asciipns);
 }
 
 /* Add characters from a zero-terminated string src to the allowed symbols pool
@@ -472,12 +472,12 @@ void parse_args(int argc, char **argv, struct Configuration *conf, const struct 
 size_t append_symbols(struct Configuration *conf, const char *src)
 {
 	size_t len = strlen(src);
-		debug_print("%s(%s) len=%zu conf->len=%zu\n", __func__, src, len, conf->len_symbols);
-		debug_print(" before realloc:     &symbols=0x%016x      symbols={%s}", conf->symbols, conf->symbols);
+	debug_print("%s(%s) len=%zu conf->len=%zu\n", __func__, src, len, conf->len_symbols);
+	debug_print(" before realloc:     &symbols=0x%016x      symbols={%s}", conf->symbols, conf->symbols);
 
 	char *new_symbols = realloc(conf->symbols, (conf->len_symbols + len + 1) * sizeof(char));
-		//debug_print(" after realloc (UB): &symbols=0x%016x      symbols={%s}", conf->symbols, conf->symbols); // undefined
-		debug_print(" after realloc:  &new_symbols=0x%016x  new_symbols={%s}", new_symbols, new_symbols);
+	//debug_print(" after realloc (UB): &symbols=0x%016x      symbols={%s}", conf->symbols, conf->symbols); // undefined
+	debug_print(" after realloc:  &new_symbols=0x%016x  new_symbols={%s}", new_symbols, new_symbols);
 	if (new_symbols) {
 		strcat(new_symbols, src);
 		debug_print(" after strcat(new_symbols, src): new_symbols={%s}", new_symbols);
@@ -489,7 +489,7 @@ size_t append_symbols(struct Configuration *conf, const char *src)
 		free(conf->symbols); // reallocation failed, so symbols wasn't freed
 		control(fatal, "memory allocation failed");
 	}
-		debug_print(" end of function: len=%zu conf->len=%zu conf->symbols={%s}", len, conf->len_symbols, conf->symbols);
+	debug_print(" end of function: len=%zu conf->len=%zu conf->symbols={%s}", len, conf->len_symbols, conf->symbols);
 	return len;
 }
 
@@ -512,7 +512,7 @@ void control(enum control_state severity, char *message)
 			break;
 		default:
 			fprintf(out, "%s: fatal: undefined control state: %d (message was: %s)\n",
-			        PROG_NAME, severity, message);
+					PROG_NAME, severity, message);
 			exit(EXIT_FAILURE);
 	}
 }
@@ -523,51 +523,51 @@ void control(enum control_state severity, char *message)
  */
 void usage (enum usage_flag topic, const struct SymbolSets *ss)
 {
-  struct Node *p;
+	struct Node *p;
 
-  switch (topic) {
-  case help:
-      printf("try `%s -h` for instructions\n", PROG_NAME );
-      break;
-  case brief:
-      printf("usage: %s [option ...] [symbols ...]\n", PROG_NAME );
-      break;
-  case full:
-      usage(brief, ss);
-      printf("\ndescription:\n" );
-      printf("  Generate random strings according to directives.\n\n");
+	switch (topic) {
+		case help:
+			printf("try `%s -h` for instructions\n", PROG_NAME );
+			break;
+		case brief:
+			printf("usage: %s [option ...] [symbols ...]\n", PROG_NAME );
+			break;
+		case full:
+			usage(brief, ss);
+			printf("\ndescription:\n" );
+			printf("  Generate random strings according to directives.\n\n");
 
-      printf("  All characters from non-option arguments are combined into\n");
-      printf("  a pool of symbols from which the random strings are formed.\n");
-      printf("  Each symbol has an equal probability of being picked (counting\n");
-      printf("  multiplicity). Some predefined symbol sets can be included by\n");
-      printf("  using the -S option. If no symbols are specified, the program\n");
-      printf("  assumes -S asciipns (all printable non-space ASCII characters)\n\n");
+			printf("  All characters from non-option arguments are combined into\n");
+			printf("  a pool of symbols from which the random strings are formed.\n");
+			printf("  Each symbol has an equal probability of being picked (counting\n");
+			printf("  multiplicity). Some predefined symbol sets can be included by\n");
+			printf("  using the -S option. If no symbols are specified, the program\n");
+			printf("  assumes -S asciipns (all printable non-space ASCII characters)\n\n");
 
-      printf("options:\n" );
-      printf("  -c NUM, --count=N    the number of strings to generate (default %d)\n", 1);
-      printf("  -l NUM, --length=N   the length of each generated string (default %d)\n", 8);
-      printf("  -h, --help           print this message and exit\n");
-      printf("  -v, --version        print version and license information and exit\n");
-      printf("  -S <SET>, --symbols=<SET>\n");
-      printf("                       append a predefined set of characters into the\n");
-      printf("                       randomization pool. See below for values of <SET>.\n\n");
-	  usage(symsets, ss);
-	  break;
-  case symsets:
-      printf("predefined character sets:\n");
-	  p = ss->iter;
-	  while (p != NULL) {
-		  printf("  %-15s%s\n", p->name, p->data);
-		  p = p->next;
-	  }
-      break;
-  case version:
-      printf("%s version %s\n%s\n%s\n%s\n", PROG_NAME, VERSION,
-          "License GPL-3.0-or-later <http://gnu.org/licenses/gpl.html>",
-	      "This is free software: you are free to change and redistribute it.",
-	      "There is NO WARRANTY, to the extent permitted by law."
-	  );
-	  break;
-  }
+			printf("options:\n" );
+			printf("  -c NUM, --count=N    the number of strings to generate (default %d)\n", 1);
+			printf("  -l NUM, --length=N   the length of each generated string (default %d)\n", 8);
+			printf("  -h, --help           print this message and exit\n");
+			printf("  -v, --version        print version and license information and exit\n");
+			printf("  -S <SET>, --symbols=<SET>\n");
+			printf("                       append a predefined set of characters into the\n");
+			printf("                       randomization pool. See below for values of <SET>.\n\n");
+			usage(symsets, ss);
+			break;
+		case symsets:
+			printf("predefined character sets:\n");
+			p = ss->iter;
+			while (p != NULL) {
+				printf("  %-15s%s\n", p->name, p->data);
+				p = p->next;
+			}
+			break;
+		case version:
+			printf("%s version %s\n%s\n%s\n%s\n", PROG_NAME, VERSION
+			      ,"License GPL-3.0-or-later <http://gnu.org/licenses/gpl.html>"
+			      ,"This is free software: you are free to change and redistribute it."
+			      ,"There is NO WARRANTY, to the extent permitted by law."
+			      );
+			break;
+	}
 }
