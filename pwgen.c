@@ -24,7 +24,7 @@
 
 // global constants
 #define PROG_NAME "pwgen"
-#define VERSION "0.4.2"
+#define VERSION "0.4.3"
 
 #ifndef DEBUG_PRINT
 #define DEBUG_PRINT 0
@@ -98,7 +98,7 @@ void control(enum control_state severity, char *message);
 enum usage_flag { help, brief, full, symsets, version };
 void usage(enum usage_flag topic, const struct SymbolSets *ss);
 
-void seed_RNG();
+unsigned int get_RNG_seed();
 int rand_range(int upper_bound);
 char *str_randomize(char *str, size_t len, const char *symbols, size_t len_symbols);
 
@@ -120,9 +120,9 @@ int main(int argc, char **argv)
   parse_args(argc, argv, &conf, &ss); // configure by command line & apply defaults
   free_symbolsets(&ss);               // symbols to use are now in conf.symbols
 
-  // generate password(s)
-  seed_RNG();
-  password = calloc(conf.pwlen + 1, sizeof(char));
+  // generate random password(s)
+  srand(get_RNG_seed());
+  password = calloc(conf.pwlen + 1, sizeof(*password)); // calloc (+1) ensures zero termination
   for (i = 0 ; i < conf.count ; i++) {
       str_randomize(password, conf.pwlen, conf.symbols, conf.len_symbols);
       printf("%s\n", password);
@@ -190,24 +190,23 @@ int rand_range(int upper_bound)
 	return r % upper_bound;
 }
 
-/* Seed the pseudo-random number generator.
+/* Get a seed for the pseudo-random number generator from a system source.
  *
+ * Use this instead of e.g. time (which is predictable) to seed the PRNG.
  * We get the seed from /dev/urandom since it's guaranteed to not block on read,
  * unlike /dev/random. Obviously, this only works on (most) *nix systems.
  */
-void seed_RNG ()
+unsigned int get_RNG_seed()
 {
   FILE *fp;
   unsigned int rseed;
 
-  // This would be weak! Also a problem when executing program in a loop.
-  //srand( time ( NULL ) );
-
-  fp = fopen ( "/dev/urandom", "rb");
-  fread (&rseed, sizeof(rseed), 1, fp);
-  fclose (fp);
-  srand (rseed);
+  fp = fopen("/dev/urandom", "rb");
+  fread(&rseed, sizeof(rseed), 1, fp);
+  fclose(fp);
   //XXX Error handling
+
+  return rseed;
 }
 
 /* Initialize the predefined symbol sets.
