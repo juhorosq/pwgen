@@ -11,7 +11,7 @@ The program is **not intended for serious security applications**.
 
 ### Build Time Dependencies
 
-No dependencies besides C standard library.
+C standard library and GNU getopts (part of glibc).
 Any C compiler supporting C99 or later should build the program.
 
 Tested with GCC on Debian GNU/Linux.

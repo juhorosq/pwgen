@@ -17,13 +17,14 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #define PROGRAM_NAME "pwgen"
-#define VERSION "0.5.1"
+#define VERSION "0.5.2"
 
 #define AUTHORS "Juho Rosqvist"
 
@@ -52,6 +53,10 @@ struct Configuration {
 	char *symbols;       // string of characters allowed in password generation
 };
 size_t append_symbols(struct Configuration *conf, const char *src);
+
+#define DEFAULT_pwcount 1
+#define DEFAULT_pwlen 8
+#define DEFAULT_symbols "asciipns"
 
 typedef struct Node Node;
 struct Node { // node for accessing symbol sets in a traversable (forward linked) list
@@ -393,30 +398,50 @@ struct Node *list_seek(struct Node *pos, const char *key)
 
 /* Process the command line and set program configuration accordingly.
  *
- * Command line interface is GNU getopt style (defined in unistd.h),
- * but short options only (XXX contrary to help text) at the moment.
+ * Command line interface is GNU getopt style.
  */
 void configure(int argc, char **argv, struct Configuration *conf, const struct SymbolSets *ss)
 {
 	// apply defaults (symbols default is applied at the end if nothing is selected)
-	conf->pwcount = 1;
-	conf->pwlen = 8;
-	conf->len_symbols = 0;
-	// append_symbols calls realloc on conf->symbols, so it must be allocated already
-	conf->symbols = calloc(conf->len_symbols + 1, sizeof(char)); // +1 to 0-terminate
+	conf->pwcount = DEFAULT_pwcount;
+	conf->pwlen   = DEFAULT_pwlen;
 
-	int c;
-	struct Node *p;
+	// append_symbols calls realloc on conf->symbols, so it must be allocated already
+	conf->len_symbols = 0;
+	conf->symbols = calloc(conf->len_symbols + 1, sizeof(*(conf->symbols)));
+
+	struct option longopts[] = {
+		// { char* name, int has_arg, int *flag, int val },
+		{ "symbols", required_argument, NULL, 'S' },
+		{ "count",   required_argument, NULL, 'c' },
+		{ "length",  required_argument, NULL, 'l' },
+		{ "help",    no_argument,       NULL, 'h' },
+		{ "version", no_argument,       NULL, 'v' },
+		{ 0, 0, 0, 0 }
+	};
+
+	int opt;           // holds the option character returned by getopt*
+	int option_index;  // getopt_long stores the option index to longopts here
+	struct Node *p;    // list iterator
 
 	// process command line options
-	while ((c = getopt(argc, argv, "S:c:l:hv")) != -1) {
-		switch (c) {
+	while ((opt = getopt_long(argc, argv, "S:c:l:hv", longopts, &option_index)) != -1) {
+		switch (opt) {
 			case 'S':
+				if (strcmp(optarg, "help") == 0) {
+					usage(symbolsets, ss);
+					exit(EXIT_SUCCESS);
+				}
+
 				p = list_seek(ss->iter, optarg);
 				if (p) {
 					append_symbols(conf, p->data);
-				} else {
-					printf("No such symbol set: %s\n", optarg);
+				}
+				else {
+					fprintf(stderr, "%s: no such symbol set: %s\n"
+						   , argv[0], optarg);
+					fprintf(stderr, "Try `%s --help` or `%s --symbols=help`\n"
+						   , PROGRAM_NAME, PROGRAM_NAME);
 					exit(EXIT_FAILURE);
 				}
 				break;
@@ -426,6 +451,7 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 			case 'h':
 				usage(full, ss);
 				exit(EXIT_SUCCESS);
+				break;
 			case 'l':
 				conf->pwlen = atoi(optarg);
 				break;
@@ -433,11 +459,12 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 				usage(version, ss);
 				exit(EXIT_SUCCESS);
 				break;
-			case '?': // invalid option
+			case '?': // invalid option; getopt_long already printed an error message
+				usage(help, ss);
 				exit(EXIT_FAILURE);
-			case ':': // option argument missing // will not happen unless option string starts with ':'?
-				exit(EXIT_FAILURE);
+				break;
 			default:
+				fprintf(stderr, "%s: unexpected error while parsing options!\n", argv[0]);
 				exit(EXIT_FAILURE);
 		}
 	}
@@ -447,7 +474,7 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 		append_symbols(conf, argv[i]);
 	}
 	if (conf->len_symbols == 0) // use default symbols if none were selected
-		append_symbols(conf, ss->asciipns);
+		append_symbols(conf, list_seek(ss->iter, DEFAULT_symbols)->data);
 }
 
 /* Add characters from a zero-terminated string src to the allowed symbols pool
@@ -492,10 +519,10 @@ void usage(enum usage_flag topic, const struct SymbolSets *ss)
 
 	switch (topic) {
 		case help:
-			printf("try `%s -h` for instructions\n", PROGRAM_NAME);
+			fprintf(stderr, "try `%s -h` for instructions\n", PROGRAM_NAME);
 			break;
 		case brief:
-			printf("usage: %s [option ...] [symbols ...]\n", PROGRAM_NAME);
+			printf("usage: %s [option ...] [--] [symbols ...]\n", PROGRAM_NAME);
 			break;
 		case full:
 			usage(brief, ss);
@@ -507,23 +534,26 @@ void usage(enum usage_flag topic, const struct SymbolSets *ss)
 			printf("  Each symbol has an equal probability of being picked (counting\n");
 			printf("  multiplicity). Some predefined symbol sets can be included by\n");
 			printf("  using the -S option. If no symbols are specified, the program\n");
-			printf("  assumes -S asciipns (all printable non-space ASCII characters)\n\n");
+			printf("  runs as if `-S %s` option was given.\n\n", DEFAULT_symbols);
 
 			printf("options:\n");
-			printf("  -c NUM, --count=N    the number of strings to generate (default %d)\n", 1);
-			printf("  -l NUM, --length=N   the length of each generated string (default %d)\n", 8);
+			printf("  -c <N>, --count=<N>  generate <N> strings (default %d)\n", DEFAULT_pwcount);
+			printf("  -l <N>, --length=<N> each string will have <N> characters (default %d)\n", DEFAULT_pwlen);
 			printf("  -h, --help           print this message and exit\n");
 			printf("  -v, --version        print version and license information and exit\n");
 			printf("  -S <SET>, --symbols=<SET>\n");
-			printf("                       append a predefined set of characters into the\n");
-			printf("                       randomization pool. See below for values of <SET>.\n\n");
+			printf("                       append a predefined set of symbols into the\n");
+			printf("                       randomization pool. Can be used multiple times.\n");
+			printf("                       If <SET> is `help`, display all predefined symbol\n");
+			printf("                       sets and exit.\n\n");
+
+			printf("predefined symbol sets:\n");
 			usage(symbolsets, ss);
 			break;
 		case symbolsets:
-			printf("predefined character sets:\n");
 			p = ss->iter;
 			while (p) {
-				printf("  %-15s%s\n", p->name, p->data);
+				printf("  %-10s%s\n", p->name, p->data);
 				p = p->next;
 			}
 			break;
