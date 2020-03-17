@@ -25,6 +25,8 @@
 #define PROGRAM_NAME "pwgen"
 #define VERSION "0.5.1"
 
+#define AUTHORS "Juho Rosqvist"
+
 #ifndef DEBUG_PRINT
 #define DEBUG_PRINT 0
 #endif
@@ -526,10 +528,11 @@ void usage(enum usage_flag topic, const struct SymbolSets *ss)
 			}
 			break;
 		case version:
-			printf("%s version %s\n%s\n%s\n%s\n", PROGRAM_NAME, VERSION
+			printf("%s version %s\n%s\n%s\n%s\n\nWritten by %s\n", PROGRAM_NAME, VERSION
 			      ,"License GPL-3.0-or-later <http://gnu.org/licenses/gpl.html>"
 			      ,"This is free software: you are free to change and redistribute it."
 			      ,"There is NO WARRANTY, to the extent permitted by law."
+			      , AUTHORS
 			      );
 			break;
 	}
