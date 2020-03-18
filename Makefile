@@ -26,12 +26,14 @@ $(debug_bin) : pwgen.c
 debug : $(debug_bin)
 demo : $(demo_bin)
 	./$(demo_bin) -v
-	./$(demo_bin) -h
+	./$(demo_bin) --help
 	./$(demo_bin)
 	./$(demo_bin) -l 16 -c 3
 	for i in 1 2 3; do ./$(demo_bin) -l 16 -c 1; done
-	./$(demo_bin) -S num
-	./$(demo_bin) -c 10 -S ALPHA -- -+= .:
-	./$(demo_bin) -l 50 -c 10 -S ALPHA -S ALPHA -S alpha  # Twice as many letters in uppercase as in lowercase
+	for i in 1 2 3; do ./$(demo_bin) -l 16 -c 1 --random-seed=no_such_file 2>/dev/null; done
+	./$(demo_bin) -l 16 -c 1 --random-seed=no_such_file
+	./$(demo_bin) --symbols=num
+	./$(demo_bin) --count 10 --length=20 -Snum -- -+= .:
+	./$(demo_bin) -l 50 -c 10 -S ALPHA -S ALPHA -S alpha  # 2/3rds uppercase, 1/3rd lowercase
 	./$(demo_bin) -l 10 -c 20 ________x  # One x per word (on average)
-	time ./$(demo_bin) -l 11 -c 30000000 " Hello" | (grep "Hello Hello" || true)  # should take less than 10 seconds
+	time ./$(demo_bin) -l 11 -c 79000000 -r/dev/zero " Hello" | grep "Hello Hello"  # should take about 10 seconds

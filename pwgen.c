@@ -21,10 +21,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #define PROGRAM_NAME "pwgen"
-#define VERSION "0.5.2"
+#define VERSION "0.5.3"
 
 #define AUTHORS "Juho Rosqvist"
 
@@ -51,11 +52,13 @@ struct Configuration {
 	size_t pwlen;        // the length of each generated password
 	size_t len_symbols;  // length of the string containing allowed characters
 	char *symbols;       // string of characters allowed in password generation
+	char *seed_file;     // name of the file whence the random seed is read
 };
 size_t append_symbols(struct Configuration *conf, const char *src);
 
 #define DEFAULT_pwcount 1
 #define DEFAULT_pwlen 8
+#define DEFAULT_seed_file "/dev/urandom"
 #define DEFAULT_symbols "asciipns"
 
 typedef struct Node Node;
@@ -103,7 +106,7 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 enum usage_flag { help, brief, full, symbolsets, version };
 void usage(enum usage_flag topic, const struct SymbolSets *ss);
 
-unsigned int get_RNG_seed();
+unsigned int get_RNG_seed(char const *file_name);
 int rand_lt(int upper_bound);
 char *str_randomize(char *str, size_t len, const char *symbols, size_t len_symbols);
 
@@ -115,14 +118,20 @@ char *str_randomize(char *str, size_t len, const char *symbols, size_t len_symbo
  */
 int main(int argc, char **argv)
 {
-	struct Configuration conf;
+	struct Configuration conf = { 0, 0, 0, NULL, NULL };
 	struct SymbolSets ss;
 
 	init_symbolsets(&ss);               // generate symbol sets provided by the program
+	assert(list_seek(ss.iter, DEFAULT_symbols));
 	configure(argc, argv, &conf, &ss);  // configure by command line & apply defaults
 	free_symbolsets(&ss);               // symbols to use are now in conf.symbols
 
-	srand(get_RNG_seed());
+	assert(conf.len_symbols == strlen(conf.symbols));
+	assert(0 < conf.len_symbols);
+	assert(conf.len_symbols <= RAND_MAX);
+
+	srand(get_RNG_seed(conf.seed_file));
+	free(conf.seed_file); conf.seed_file = NULL;
 
 	char *password = calloc(conf.pwlen + 1, sizeof(*password)); // calloc (+1) ensures zero termination
 	for (int i = 0 ; i < conf.pwcount ; ++i) {
@@ -176,7 +185,6 @@ int rand_lt(int upper_bound)
 	 * we use rejection sampling to ensure that the result is also
 	 * uniformly distributed on our range [0, upper_bound - 1].
 	 */
-	assert(upper_bound <= RAND_MAX);  //XXX Bad form: input-dependent
 	int reject_bound = RAND_MAX - (RAND_MAX % upper_bound);
 	assert(reject_bound % upper_bound == 0);
 	while ((r = rand()) >= reject_bound);
@@ -186,18 +194,27 @@ int rand_lt(int upper_bound)
 
 /* Get a seed for the pseudo-random number generator from a system source.
  *
- * Use this instead of e.g. time (which is predictable) to seed the PRNG.
- * We get the seed from /dev/urandom since it's guaranteed to not block on read,
+ * Recommended source is /dev/urandom since it may not block on read,
  * unlike /dev/random. Obviously, this only works on (most) *nix systems.
+ * Will fall back to system time (predictable) if opening the file fails.
  */
-unsigned int get_RNG_seed()
+unsigned int get_RNG_seed(char const *file_name)
 {
 	unsigned int rseed;
 
-	FILE *fp = fopen("/dev/urandom", "rb");
-	fread(&rseed, sizeof(rseed), 1, fp);
-	fclose(fp);
-	//XXX Error handling
+	FILE *fp = fopen(file_name, "rb");
+	if (fp) {
+		fread(&rseed, sizeof(rseed), 1, fp);
+		fclose(fp);
+	}
+	else {
+		perror(file_name);
+		fprintf(stderr, "%s\n%s\n"
+		       , "WARNING: fallback: using system time as random seed"
+		       , "WARNING: system time is predictable!"
+			   );
+		rseed = time(0);
+	}
 
 	return rseed;
 }
@@ -405,18 +422,21 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 	// apply defaults (symbols default is applied at the end if nothing is selected)
 	conf->pwcount = DEFAULT_pwcount;
 	conf->pwlen   = DEFAULT_pwlen;
+	conf->seed_file = malloc((strlen(DEFAULT_seed_file) + 1) * sizeof(*(conf->seed_file)));
+	strcpy(conf->seed_file, DEFAULT_seed_file);
 
-	// append_symbols calls realloc on conf->symbols, so it must be allocated already
+	// append_symbols calls realloc on conf->symbols, so it must be allocated beforehand
 	conf->len_symbols = 0;
 	conf->symbols = calloc(conf->len_symbols + 1, sizeof(*(conf->symbols)));
 
 	struct option longopts[] = {
-		// { char* name, int has_arg, int *flag, int val },
-		{ "symbols", required_argument, NULL, 'S' },
-		{ "count",   required_argument, NULL, 'c' },
-		{ "length",  required_argument, NULL, 'l' },
-		{ "help",    no_argument,       NULL, 'h' },
-		{ "version", no_argument,       NULL, 'v' },
+		// { char* name, int has_arg,       int *flag, int val },
+		{ "symbols",     required_argument, NULL,      'S' },
+		{ "count",       required_argument, NULL,      'c' },
+		{ "length",      required_argument, NULL,      'l' },
+		{ "random-seed", required_argument, NULL,      'r' },
+		{ "help",        no_argument,       NULL,      'h' },
+		{ "version",     no_argument,       NULL,      'v' },
 		{ 0, 0, 0, 0 }
 	};
 
@@ -425,7 +445,7 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 	struct Node *p;    // list iterator
 
 	// process command line options
-	while ((opt = getopt_long(argc, argv, "S:c:l:hv", longopts, &option_index)) != -1) {
+	while ((opt = getopt_long(argc, argv, "S:c:l:r:hv", longopts, &option_index)) != -1) {
 		switch (opt) {
 			case 'S':
 				if (strcmp(optarg, "help") == 0) {
@@ -454,6 +474,17 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 				break;
 			case 'l':
 				conf->pwlen = atoi(optarg);
+				break;
+			case 'r':
+				conf->seed_file = realloc(conf->seed_file, (strlen(optarg) + 1) * sizeof(*(conf->seed_file)));
+				if (conf->seed_file) {
+					strcpy(conf->seed_file, optarg);
+				}
+				else {
+					free(conf->seed_file);
+					fprintf(stderr, "%s: memory allocation failed\n", argv[0]);
+					exit(EXIT_FAILURE);
+				}
 				break;
 			case 'v':
 				usage(version, ss);
@@ -534,20 +565,22 @@ void usage(enum usage_flag topic, const struct SymbolSets *ss)
 			printf("  Each symbol has an equal probability of being picked (counting\n");
 			printf("  multiplicity). Some predefined symbol sets can be included by\n");
 			printf("  using the -S option. If no symbols are specified, the program\n");
-			printf("  runs as if `-S %s` option was given.\n\n", DEFAULT_symbols);
+			printf("  runs as if `-S %s` option was given.\n", DEFAULT_symbols);
 
-			printf("options:\n");
-			printf("  -c <N>, --count=<N>  generate <N> strings (default %d)\n", DEFAULT_pwcount);
-			printf("  -l <N>, --length=<N> each string will have <N> characters (default %d)\n", DEFAULT_pwlen);
+			printf("\noptions:\n");
+			printf("  -c <N>, --count=<N>  generate <N> strings (default: %d)\n", DEFAULT_pwcount);
+			printf("  -l <N>, --length=<N> each string will have <N> characters (default: %d)\n", DEFAULT_pwlen);
 			printf("  -h, --help           print this message and exit\n");
 			printf("  -v, --version        print version and license information and exit\n");
 			printf("  -S <SET>, --symbols=<SET>\n");
 			printf("                       append a predefined set of symbols into the\n");
 			printf("                       randomization pool. Can be used multiple times.\n");
 			printf("                       If <SET> is `help`, display all predefined symbol\n");
-			printf("                       sets and exit.\n\n");
+			printf("                       sets and exit.\n");
+			printf("  -r <FILE>, --random-seed=<FILE>\n");
+			printf("                       read random seed from <FILE> (default: %s)\n", DEFAULT_seed_file);
 
-			printf("predefined symbol sets:\n");
+			printf("\npredefined symbol sets:\n");
 			usage(symbolsets, ss);
 			break;
 		case symbolsets:
