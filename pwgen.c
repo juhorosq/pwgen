@@ -92,9 +92,10 @@ size_t fill_ascii_range(char *dest, char first, char last);
 char *symset_alloc(const char *src, size_t len);
 
 void parse_args(int argc, char **argv, struct Configuration *conf, const struct SymbolSets *ss);
+enum control_state { info, warn, error, fatal };
+void control(enum control_state severity, char *message);
 enum usage_flag { help, brief, full, symsets, version };
 void usage(enum usage_flag topic, const struct SymbolSets *ss);
-
 
 void seed_RNG();
 int rand_range(int upper_bound);
@@ -430,6 +431,29 @@ size_t append_symbols(struct Configuration *conf, const char *src)
 	return len;
 }
 
+void control(enum control_state severity, char *message)
+{
+	FILE *out = stderr;
+	switch (severity) {
+		case info:
+			fprintf(out, "%s: %s\n", PROG_NAME, message);
+			break;
+		case warn:
+			fprintf(out, "%s: WARNING: %s\n", PROG_NAME, message);
+			break;
+		case error:
+			fprintf(out, "%s: ERROR: %s\n", PROG_NAME, message);
+			break;
+		case fatal:
+			fprintf(out, "%s: FATAL: %s\n", PROG_NAME, message);
+			exit(EXIT_FAILURE);
+			break;
+		default:
+			fprintf(out, "%s: fatal: undefined control state: %d (message was: %s)\n",
+			        PROG_NAME, severity, message);
+			exit(EXIT_FAILURE);
+	}
+}
 
 void usage (enum usage_flag topic, const struct SymbolSets *ss)
 {
