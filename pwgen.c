@@ -47,64 +47,40 @@ void debug_info(const char *file, int line, const char *func, const char *fmt, .
 #define debug_print(fmt, ...) do { if (DEBUG_PRINT) \
 	debug_info(__FILE__, __LINE__, __func__, fmt, ##__VA_ARGS__); } while (0)
 
+typedef struct Node Node;
+struct Node { // node for accessing symbol sets in a traversable (forward linked) list
+	char *name;    // user-facing name of this symbol set
+	char *data;    // pointer to the actual symbols string
+	size_t size;   // number of characters in the symbols string (excluding '\0')
+
+	struct Node *next;  // link to the next node in the list
+};
+struct Node *list_append(struct Node *llist, struct Node *new_node);
+struct Node *list_seek(struct Node *pos, const char *key);
+struct Node *mknode(char const *name, char const *data, size_t size);
+
 struct Configuration {
 	int pwcount;         // how many random passwords to generate
 	size_t pwlen;        // the length of each generated password
-	size_t len_symbols;  // length of the string containing allowed characters
-	char *symbols;       // string of characters allowed in password generation
+	size_t len_active_symbols;  // length of the string containing allowed characters
+	char *active_symbols;       // string of characters allowed in password generation
 	char *seed_file;     // name of the file whence the random seed is read
+	Node *symbol_sets;   // points to the root of the list of predefined symbol sets
 };
-size_t append_symbols(struct Configuration *conf, const char *src);
 
 #define DEFAULT_pwcount 1
 #define DEFAULT_pwlen 8
 #define DEFAULT_seed_file "/dev/urandom"
 #define DEFAULT_symbols "asciipns"
 
-typedef struct Node Node;
-struct Node { // node for accessing symbol sets in a traversable (forward linked) list
-	char *name;    // user-facing name of this symbol set
-	char *data;    // pointer to the actual symbols string
-	size_t *size;  // pointer to the number of characters in the symbols string (excluding '\0')
-
-	struct Node *next;  // link to the next node in the list
-};
-struct Node *list_append(struct Node *llist, struct Node *new_node);
-struct Node *list_seek(struct Node *pos, const char *key);
-struct Node *mknode(char *name, char *data, size_t *size);
-
-struct SymbolSets {  // structure to hold predefined symbol sets
-	struct Node *iter;   // The first node in a linked list of the contents of this struct
-
-	char *asciip;        // printable ASCII characters, including space (32-126)
-	size_t len_asciip;
-	char *asciipns;      // printable ASCII characters, without space (33-126)
-	size_t len_asciipns;
-	char *numeric;       // numbers 0-9 (ASCII 48-57)
-	size_t len_numeric;
-	char *ALPHABETIC;    // uppercase letters (65-90)
-	size_t len_ALPHABETIC;
-	char *alphabetic;    // lowercase letters (97-122)
-	size_t len_alphabetic;
-	char *Alphabetic;    // all letters (*ALPHABETIC + *alphabetic)
-	size_t len_Alphabetic;
-	char *ALNUM;         // uppercase alphanumeric characters (*ALPHABETIC + *numeric)
-	size_t len_ALNUM;
-	char *alnum;         // lowercase alphanumeric characters (*alphabetic + *numeric)
-	size_t len_alnum;
-	char *Alnum;         // alphanumeric characters (*Alphabetic + *numeric)
-	size_t len_Alnum;
-	char *punct;         // punctuation characters (33-47, 58-64, 91-96, 123-126)
-	size_t len_punct;
-};
-void init_symbolsets(struct SymbolSets *ss);
-void free_symbolsets(struct SymbolSets *ss);
+size_t activate_symbols(struct Configuration *conf, const char *src);
+void configure(struct Configuration *conf, int argc, char **argv);
+void init_symbol_sets(struct Node **llist_root);
+void free_symbol_sets(struct Node **llist_root);
 size_t fill_ascii_range(char *dest, char first, char last);
-char *symbolset_alloc(const char *src, size_t len);
 
-void configure(int argc, char **argv, struct Configuration *conf, const struct SymbolSets *ss);
-enum usage_flag { help, brief, full, symbolsets, version };
-void usage(enum usage_flag topic, const struct SymbolSets *ss);
+enum usage_flag { help, brief, full, symbol_sets, version };
+void usage(enum usage_flag topic, const struct Configuration *conf);
 
 unsigned int get_RNG_seed(char const *file_name);
 int rand_lt(int upper_bound);
@@ -118,28 +94,27 @@ char *str_randomize(char *str, size_t len, const char *symbols, size_t len_symbo
  */
 int main(int argc, char **argv)
 {
-	struct Configuration conf = { 0, 0, 0, NULL, NULL };
-	struct SymbolSets ss;
+	struct Configuration conf = { 0, 0, 0, NULL, NULL, NULL };
 
-	init_symbolsets(&ss);               // generate symbol sets provided by the program
-	assert(list_seek(ss.iter, DEFAULT_symbols));
-	configure(argc, argv, &conf, &ss);  // configure by command line & apply defaults
-	free_symbolsets(&ss);               // symbols to use are now in conf.symbols
+	init_symbol_sets(&(conf.symbol_sets));  // generate symbol sets provided by the program
+	assert(list_seek(conf.symbol_sets, DEFAULT_symbols));
+	configure(&conf, argc, argv);           // configure by command line & apply defaults
+	free_symbol_sets(&(conf.symbol_sets));  // symbols to use are now in conf.symbols
 
-	assert(conf.len_symbols == strlen(conf.symbols));
-	assert(0 < conf.len_symbols);
-	assert(conf.len_symbols <= RAND_MAX);
+	assert(conf.len_active_symbols == strlen(conf.active_symbols));
+	assert(0 < conf.len_active_symbols);
+	assert(conf.len_active_symbols <= RAND_MAX);
 
 	srand(get_RNG_seed(conf.seed_file));
 	free(conf.seed_file); conf.seed_file = NULL;
 
 	char *password = calloc(conf.pwlen + 1, sizeof(*password)); // calloc (+1) ensures zero termination
 	for (int i = 0 ; i < conf.pwcount ; ++i) {
-		str_randomize(password, conf.pwlen, conf.symbols, conf.len_symbols);
+		str_randomize(password, conf.pwlen, conf.active_symbols, conf.len_active_symbols);
 		printf("%s\n", password);
 	}
 	free(password);
-	free(conf.symbols);
+	free(conf.active_symbols);
 
 	return EXIT_SUCCESS;
 }
@@ -227,104 +202,92 @@ unsigned int get_RNG_seed(char const *file_name)
  * equal to (len_XYZ+1)*sizeof(char).
  *
  * The reason for all these dynamic allocations over static strings in the
- * program .text section is my desire to define them by ASCII character
+ * program .text section is the desire to define them by ASCII character
  * ranges. This system also automates the string length calculations, which
  * should eliminate some pesky errors in case one modifies these character
  * sets.
  */
-void init_symbolsets(struct SymbolSets *ss)
+void init_symbol_sets(struct Node **llist_root)
 {
-	struct Node *p;  // list iterator
+	struct Node *iter;  // list iterator
 	char syms[128];  // buffer for building strings
 	size_t len;      // length of string in the buffer
 
+	assert(*llist_root == NULL);  // only operate on empty list
+
 	// printable ASCII characters, including space (32--126)
 	len = fill_ascii_range(syms, ' ', '~');
-	ss->asciip = symbolset_alloc(syms, len);
-	ss->len_asciip = len;
-	// the first node in our linked list must be manually connected
-	p = ss->iter = mknode("asciip", ss->asciip, &(ss->len_asciip));
+	*llist_root = iter = mknode("asciip", syms, len);  // insert root node manually
 
 	// printable ASCII characters, without space (33--126)
 	len = fill_ascii_range(syms, '!', '~');
-	ss->asciipns = symbolset_alloc(syms, len);
-	ss->len_asciipns = len;
-	p = list_append(p, mknode("asciipns", ss->asciipns, &(ss->len_asciipns)));
+	iter = list_append(iter, mknode("asciipns", syms, len));
 
 	// numbers 0-9 (ASCII 48--57)
 	len = fill_ascii_range(syms, '0', '9');
-	ss->numeric = symbolset_alloc(syms, len);
-	ss->len_numeric = len;
-	p = list_append(p, mknode("num", ss->numeric, &(ss->len_numeric)));
+	iter = list_append(iter, mknode("num", syms, len));
 
 	// uppercase letters (65--90)
 	len = fill_ascii_range(syms, 'A', 'Z');
-	ss->ALPHABETIC = symbolset_alloc(syms, len);
-	ss->len_ALPHABETIC = len;
-	p = list_append(p, mknode("ALPHA", ss->ALPHABETIC, &(ss->len_ALPHABETIC)));
+	iter = list_append(iter, mknode("ALPHA", syms, len));
 
 	// lowercase letters (97--122)
 	len = fill_ascii_range(syms, 'a', 'z');
-	ss->alphabetic = symbolset_alloc(syms, len);
-	ss->len_alphabetic = len;
-	p = list_append(p, mknode("alpha", ss->alphabetic, &(ss->len_alphabetic)));
+	iter = list_append(iter, mknode("alpha", syms, len));
 
-	// all letters (*ALPHABETIC + *alphabetic)
-	len = ss->len_ALPHABETIC + ss->len_alphabetic;
-	strcpy(syms, ss->ALPHABETIC);
-	strcpy(syms + ss->len_ALPHABETIC, ss->alphabetic);
-	ss->Alphabetic = symbolset_alloc(syms, len);
-	ss->len_Alphabetic = len;
-	p = list_append(p, mknode("Alpha", ss->Alphabetic, &(ss->len_Alphabetic)));
+	// don't repeat yourself: reuse above symbol sets)
+	struct Node *q;     // temporary node pointer
 
-	// uppercase alphanumeric characters (*ALPHABETIC + *numeric)
-	len = ss->len_ALPHABETIC + ss->len_numeric;
-	strcpy(syms, ss->ALPHABETIC);
-	strcpy(syms + ss->len_ALPHABETIC, ss->numeric);
-	ss->ALNUM = symbolset_alloc(syms, len);
-	ss->len_ALNUM = len;
-	p = list_append(p, mknode("ALNUM", ss->ALNUM, &(ss->len_ALNUM)));
+	// all letters (ALPHA + alpha)
+	q = list_seek(*llist_root, "ALPHA"); assert(q);
+	strcpy(syms, q->data); len = q->size;
+	q = list_seek(*llist_root, "alpha"); assert(q);
+	strcpy(syms + len, q->data); len += q->size;
+	iter = list_append(iter, mknode("Alpha", syms, len));
 
-	// lowercase alphanumeric characters (*alphabetic + *numeric)
-	len = ss->len_alphabetic + ss->len_numeric;
-	strcpy(syms, ss->alphabetic);
-	strcpy(syms + ss->len_alphabetic, ss->numeric);
-	ss->alnum = symbolset_alloc(syms, len);
-	ss->len_alnum = len;
-	p = list_append(p, mknode("alnum", ss->alnum, &(ss->len_alnum)));
+	// uppercase alphanumeric characters (ALPHA + num)
+	q = list_seek(*llist_root, "ALPHA"); assert(q);
+	strcpy(syms, q->data); len = q->size;
+	q = list_seek(*llist_root, "num"); assert(q);
+	strcpy(syms + len, q->data); len += q->size;
+	iter = list_append(iter, mknode("ALNUM", syms, len));
 
-	// uppercase & lowercase alphanumeric characters (*Alphabetic + *numeric)
-	len = ss->len_Alphabetic + ss->len_numeric;
-	strcpy(syms, ss->Alphabetic);
-	strcpy(syms + ss->len_Alphabetic, ss->numeric);
-	ss->Alnum = symbolset_alloc(syms, len);
-	ss->len_Alnum = len;
-	p = list_append(p, mknode("Alnum", ss->Alnum, &(ss->len_Alnum)));
+	// lowercase alphanumeric characters (alpha + num)
+	q = list_seek(*llist_root, "alpha"); assert(q);
+	strcpy(syms, q->data); len = q->size;
+	q = list_seek(*llist_root, "num"); assert(q);
+	strcpy(syms + len, q->data); len += q->size;
+	iter = list_append(iter, mknode("alnum", syms, len));
+
+	// uppercase & lowercase alphanumeric characters (Alpha + num)
+	q = list_seek(*llist_root, "Alpha"); assert(q);
+	strcpy(syms, q->data); len = q->size;
+	q = list_seek(*llist_root, "num"); assert(q);
+	strcpy(syms + len, q->data); len += q->size;
+	iter = list_append(iter, mknode("Alnum", syms, len));
 
 	// punctuation characters (33--47, 58--64, 91--96, 123--126)
 	len = fill_ascii_range(syms, '!', '/');
 	len += fill_ascii_range(syms + len, ':', '@');
 	len += fill_ascii_range(syms + len, '[', '`');
 	len += fill_ascii_range(syms + len, '{', '~');
-	ss->punct = symbolset_alloc(syms, len);
-	ss->len_punct = len;
-	p = list_append(p, mknode("punct", ss->punct, &(ss->len_punct)));
+	iter = list_append(iter, mknode("punct", syms, len));
 }
 
 /* Free the memory allocated for predefined symbol sets. They are only used
  * during the program setup, after which they may be freed.
  */
-void free_symbolsets(struct SymbolSets *ss)
+void free_symbol_sets(struct Node **llist_root)
 {
-	struct Node *p = ss->iter;
+	struct Node *iter = *llist_root;
 
-	while (p) {
-		struct Node *q = p->next;
-		debug_print("freeing: 0x%016x: %s = {%s}", p, p->name, p->data);
-		free(p->name); free(p->data); free(p);
-		p = q;
+	while (iter) {
+		struct Node *next = iter->next;
+		debug_print("freeing: 0x%016x: %s = {%s}", iter, iter->name, iter->data);
+		free(iter->name); free(iter->data); free(iter);
+		iter = next;
 	}
-	ss->iter = NULL;
+	*llist_root = NULL;
 }
 
 /* Replace characters from the start of the string dest with the ASCII values
@@ -344,35 +307,23 @@ size_t fill_ascii_range(char *dest, char first, char last)
 	return i;
 }
 
-/* Allocate memory for string of length len, copy the first len characters
- * from src array to it and return a pointer to the newly created string.
- *
- * New string will have a terminating '\0' after the last copied character.
- */
-char *symbolset_alloc(const char *src, size_t len)
-{
-	char *dest = malloc((len + 1) * sizeof(*dest)); // +1 for '\0'
-	strncpy(dest, src, len);
-	dest[len] = '\0';  // if strlen(src) < len, strncpy will pad with zeroes
-
-	return dest;
-}
-
-/* Allocate memory for a new linked list Node for our SymbolSets list,
+/* Allocate memory for a new linked list Node for our symbol sets list,
  * initialize it with values from (name, data, size) and return a pointer
  * to this node.
  * Note that mknode will produce a detached node, you have to add it
  * to a list yourself, e.g. using list_append.
- * Note that the resulting node does not own *data and *size, but merely
- * pointers to them; in contrast *name is copied onto memory owned by Node.
  */
-struct Node *mknode(char *name, char *data, size_t *size)
+struct Node *mknode(char const *name, char const *symbols, size_t size)
 {
 	struct Node *new_node = malloc(sizeof(*new_node));
 
 	new_node->name = calloc(strlen(name) + 1, sizeof(*(new_node->name)));
 	strcpy(new_node->name, name);
-	new_node->data = data;
+
+	new_node->data = malloc((size + 1) * sizeof(*(new_node->data)));
+	strncpy(new_node->data, symbols, size);
+	new_node->data[size] = '\0';  // if strlen(src) < len, strncpy will pad with zeroes
+
 	new_node->size = size;
 	new_node->next = NULL;  // this node is not yet part of any list
 
@@ -417,7 +368,7 @@ struct Node *list_seek(struct Node *pos, const char *key)
  *
  * Command line interface is GNU getopt style.
  */
-void configure(int argc, char **argv, struct Configuration *conf, const struct SymbolSets *ss)
+void configure(struct Configuration *conf, int argc, char **argv)
 {
 	// apply defaults (symbols default is applied at the end if nothing is selected)
 	conf->pwcount = DEFAULT_pwcount;
@@ -425,9 +376,9 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 	conf->seed_file = malloc((strlen(DEFAULT_seed_file) + 1) * sizeof(*(conf->seed_file)));
 	strcpy(conf->seed_file, DEFAULT_seed_file);
 
-	// append_symbols calls realloc on conf->symbols, so it must be allocated beforehand
-	conf->len_symbols = 0;
-	conf->symbols = calloc(conf->len_symbols + 1, sizeof(*(conf->symbols)));
+	// activate_symbols calls realloc on conf->active_symbols, so it must be allocated beforehand
+	conf->len_active_symbols = 0;
+	conf->active_symbols = calloc(conf->len_active_symbols + 1, sizeof(*(conf->active_symbols)));
 
 	struct option longopts[] = {
 		// { char* name, int has_arg,       int *flag, int val },
@@ -449,13 +400,13 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 		switch (opt) {
 			case 'S':
 				if (strcmp(optarg, "help") == 0) {
-					usage(symbolsets, ss);
+					usage(symbol_sets, conf);
 					exit(EXIT_SUCCESS);
 				}
 
-				p = list_seek(ss->iter, optarg);
+				p = list_seek(conf->symbol_sets, optarg);
 				if (p) {
-					append_symbols(conf, p->data);
+					activate_symbols(conf, p->data);
 				}
 				else {
 					fprintf(stderr, "%s: no such symbol set: %s\n"
@@ -469,7 +420,7 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 				conf->pwcount = atoi(optarg);
 				break;
 			case 'h':
-				usage(full, ss);
+				usage(full, conf);
 				exit(EXIT_SUCCESS);
 				break;
 			case 'l':
@@ -487,11 +438,11 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 				}
 				break;
 			case 'v':
-				usage(version, ss);
+				usage(version, conf);
 				exit(EXIT_SUCCESS);
 				break;
 			case '?': // invalid option; getopt_long already printed an error message
-				usage(help, ss);
+				usage(help, conf);
 				exit(EXIT_FAILURE);
 				break;
 			default:
@@ -502,41 +453,40 @@ void configure(int argc, char **argv, struct Configuration *conf, const struct S
 
 	// process non-option arguments as (partial) character pool definitions
 	for (int i = optind; i < argc; ++i) {
-		append_symbols(conf, argv[i]);
+		activate_symbols(conf, argv[i]);
 	}
-	if (conf->len_symbols == 0) // use default symbols if none were selected
-		append_symbols(conf, list_seek(ss->iter, DEFAULT_symbols)->data);
+	if (conf->len_active_symbols == 0) // use default symbols if none were selected
+		activate_symbols(conf, list_seek(conf->symbol_sets, DEFAULT_symbols)->data);
 }
 
 /* Add characters from a zero-terminated string src to the allowed symbols pool
- * conf->symbols (reallocating memory as needed) and update symbols count
- * conf->len_symbols.
+ * conf->active_symbols (reallocating memory as needed) and update symbols count
+ * conf->len_active_symbols.
  * Failing to reallocate memory is fatal, and terminates the program.
  *
- * Return the number of characters added.
+ * Return the number of characters added to conf->active_symbols.
  */
-size_t append_symbols(struct Configuration *conf, const char *src)
+size_t activate_symbols(struct Configuration *conf, const char *src)
 {
 	size_t len = strlen(src);
-	debug_print("%s(%s) len=%zu conf->len=%zu\n", __func__, src, len, conf->len_symbols);
-	debug_print(" before realloc:     &symbols=0x%016x      symbols={%s}", conf->symbols, conf->symbols);
+	debug_print("%s(%s) len=%zu conf->len=%zu\n", __func__, src, len, conf->len_active_symbols);
+	debug_print(" before realloc:     &symbols=0x%016x      symbols={%s}", conf->active_symbols, conf->active_symbols);
 
-	char *new_symbols = realloc(conf->symbols, (conf->len_symbols + len + 1) * sizeof(*new_symbols));
-	//debug_print(" after realloc (UB): &symbols=0x%016x      symbols={%s}", conf->symbols, conf->symbols); // undefined
+	char *new_symbols = realloc(conf->active_symbols, (conf->len_active_symbols + len + 1) * sizeof(*new_symbols));
 	debug_print(" after realloc:  &new_symbols=0x%016x  new_symbols={%s}", new_symbols, new_symbols);
 	if (new_symbols) {
 		strcat(new_symbols, src);
 		debug_print(" after strcat(new_symbols, src): new_symbols={%s}", new_symbols);
-		conf->len_symbols += len;
-		conf->symbols = new_symbols;
-		assert(*(conf->symbols + conf->len_symbols) == '\0');  // no +1 here!
+		conf->len_active_symbols += len;
+		conf->active_symbols = new_symbols;
+		assert(*(conf->active_symbols + conf->len_active_symbols) == '\0');  // no +1 here!
 	}
 	else {
-		free(conf->symbols); // reallocation failed, so symbols wasn't freed
+		free(conf->active_symbols); // reallocation failed, so active_symbols wasn't freed
 		fprintf(stderr, "%s: memory allocation failed\n", PROGRAM_NAME);
 		exit(EXIT_FAILURE);
 	}
-	debug_print(" end of function: len=%zu conf->len=%zu conf->symbols={%s}", len, conf->len_symbols, conf->symbols);
+	debug_print(" end of function: len=%zu conf->len=%zu conf->active_symbols={%s}", len, conf->len_active_symbols, conf->active_symbols);
 	return len;
 }
 
@@ -544,7 +494,7 @@ size_t append_symbols(struct Configuration *conf, const char *src)
  *
  * usage_flag argument controls which part of the information is displayed.
  */
-void usage(enum usage_flag topic, const struct SymbolSets *ss)
+void usage(enum usage_flag topic, const struct Configuration *conf)
 {
 	struct Node *p;
 
@@ -556,7 +506,7 @@ void usage(enum usage_flag topic, const struct SymbolSets *ss)
 			printf("usage: %s [option ...] [--] [symbols ...]\n", PROGRAM_NAME);
 			break;
 		case full:
-			usage(brief, ss);
+			usage(brief, conf);
 			printf("\ndescription:\n");
 			printf("  Generate random strings according to directives.\n\n");
 
@@ -581,10 +531,10 @@ void usage(enum usage_flag topic, const struct SymbolSets *ss)
 			printf("                       read random seed from <FILE> (default: %s)\n", DEFAULT_seed_file);
 
 			printf("\npredefined symbol sets:\n");
-			usage(symbolsets, ss);
+			usage(symbol_sets, conf);
 			break;
-		case symbolsets:
-			p = ss->iter;
+		case symbol_sets:
+			p = conf->symbol_sets;
 			while (p) {
 				printf("  %-10s%s\n", p->name, p->data);
 				p = p->next;
