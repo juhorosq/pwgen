@@ -4,7 +4,7 @@ CFLAGS = -g -O2 -Wall
 
 DEBUGCFLAGS = -g -Og -Wall
 #DEBUGCFLAGS = -DDEBUG_PRINT
-#DEBUGCFLAGS += -fsanitize=address
+DEBUGCFLAGS += -fsanitize=address
 DEBUGCFLAGS += -fsanitize=undefined
 DEBUGCFLAGS += -fsanitize=null
 DEBUGCFLAGS += -fsanitize=return

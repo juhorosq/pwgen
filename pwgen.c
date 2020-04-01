@@ -121,8 +121,14 @@ int main(int argc, char **argv)
       printf("%s\n", password);
   }
 
+#ifndef NDEBUG
+  debug_print("freeing memory before exit to appease leak sanitizer.");
   free(password);
   free(conf.symbols);
+  struct Node *p, *q; p = q = ss.iter;
+  while (p) { q = p->next; free(p->name); free(p->data); free(p); p = q; }
+  debug_print("exiting.");
+#endif
   return EXIT_SUCCESS;
 }
 
@@ -413,21 +419,31 @@ void parse_args(int argc, char **argv, struct Configuration *conf, const struct 
 /* Add characters from a zero-terminated string src to the allowed symbols pool
  * conf->symbols (reallocating memory as needed) and update symbols count
  * conf->len_symbols.
+ * Failing to reallocate memory is fatal, and terminates the program.
  *
  * Return the number of characters added.
  */
 size_t append_symbols(struct Configuration *conf, const char *src)
 {
-	int len = strlen(src);
-    debug_print("%s(%s) len=%d conf->len=%zu\n", __func__, src, len, conf->len_symbols);
-	conf->symbols = realloc(conf->symbols, (conf->len_symbols + len + 1) * sizeof(char));
-	debug_print(" after realloc, conf->symbols={%s}\n", conf->symbols);
-	strcat(conf->symbols, src);
-	debug_print(" after strcat(conf->symbols, src), conf->symbols={%s}\n", conf->symbols);
-	// *(conf->symbols + (conf->len_symbols + len + 1)) = '\0'; // off-by-1 (past the end)!
-	//debug_print(" *(conf->symbols + (conf->len_symbols + len))=%d\n", *(conf->symbols + (conf->len_symbols + len + 1)));
-	assert(*(conf->symbols + (conf->len_symbols + len)) == '\0');  // no +1 here!
-	conf->len_symbols += len;
+	size_t len = strlen(src);
+		debug_print("%s(%s) len=%zu conf->len=%zu\n", __func__, src, len, conf->len_symbols);
+		debug_print(" before realloc:     &symbols=0x%012x      symbols={%s}\n", conf->symbols, conf->symbols);
+
+	char *new_symbols = realloc(conf->symbols, (conf->len_symbols + len + 1) * sizeof(char));
+		//debug_print(" after realloc (UB): &symbols=0x%012x      symbols={%s}\n", conf->symbols, conf->symbols); // undefined
+		debug_print(" after realloc:  &new_symbols=0x%012x  new_symbols={%s}\n", new_symbols, new_symbols);
+	if (new_symbols) {
+		strcat(new_symbols, src);
+		debug_print(" after strcat(new_symbols, src): new_symbols={%s}\n", new_symbols);
+		conf->len_symbols += len;
+		conf->symbols = new_symbols;
+		assert(*(conf->symbols + conf->len_symbols) == '\0');  // no +1 here!
+	}
+	else {
+		free(conf->symbols); // reallocation failed, so symbols wasn't freed
+		control(fatal, "memory allocation failed");
+	}
+		debug_print(" end of function: len=%zu conf->len=%zu conf->symbols={%s}\n", len, conf->len_symbols, conf->symbols);
 	return len;
 }
 
