@@ -13,16 +13,17 @@ DEBUGCFLAGS += -fsanitize=signed-integer-overflow
 DEBUGCFLAGS += -fsanitize=object-size
 DEBUGCFLAGS += -fsanitize=enum
 
-demo_bin = pwgen-debug
+debug_bin = pwgen-debug
+demo_bin  = $(debug_bin)
 
 pwgen : pwgen.c
 	$(CC) -o $@ -DNDEBUG $(CFLAGS) $<
 
-pwgen-debug : pwgen.c
+$(debug_bin) : pwgen.c
 	$(CC) -o $@ $(DEBUGCFLAGS) $<
 
 .PHONY: debug demo
-debug : pwgen-debug
+debug : $(debug_bin)
 demo : $(demo_bin)
 	./$(demo_bin) -v
 	./$(demo_bin) -h
@@ -33,4 +34,4 @@ demo : $(demo_bin)
 	./$(demo_bin) -c 10 -S ALPHA -- -+= .:
 	./$(demo_bin) -l 50 -c 10 -S ALPHA -S ALPHA -S alpha  # Twice as many letters in uppercase as in lowercase
 	./$(demo_bin) -l 10 -c 20 ________x  # One x per word (on average)
-	time ./$(demo_bin) -l 11 -c 30000000 " Hello" | grep "Hello Hello"  # should take less than 10 seconds
+	time ./$(demo_bin) -l 11 -c 30000000 " Hello" | (grep "Hello Hello" || true)  # should take less than 10 seconds
