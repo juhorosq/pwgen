@@ -88,6 +88,7 @@ struct SymbolSets {  // structure to hold predefined symbol sets
 	size_t len_punct;
 };
 void init_symbolsets(struct SymbolSets *ss);
+void free_symbolsets(struct SymbolSets *ss);
 size_t fill_ascii_range(char *dest, char first, char last);
 char *symset_alloc(const char *src, size_t len);
 
@@ -112,6 +113,7 @@ int main(int argc, char **argv)
 
   init_symbolsets(&ss);               // generate symbol sets provided by the program
   parse_args(argc, argv, &conf, &ss); // configure by command line & apply defaults
+  free_symbolsets(&ss);               // symbols to use are now in conf.symbols
 
   // generate password(s)
   seed_RNG();
@@ -123,12 +125,13 @@ int main(int argc, char **argv)
 
 #ifndef NDEBUG
   debug_print("freeing memory before exit to appease leak sanitizer.");
+  debug_print("freeing: 0x%06x: %s = {%s}", password, "password", password);
   free(password);
+  debug_print("freeing: 0x%06x: %s = {%s}", conf.symbols, "conf.symbols", conf.symbols);
   free(conf.symbols);
-  struct Node *p, *q; p = q = ss.iter;
-  while (p) { q = p->next; free(p->name); free(p->data); free(p); p = q; }
   debug_print("exiting.");
 #endif
+
   return EXIT_SUCCESS;
 }
 
@@ -198,6 +201,12 @@ void seed_RNG ()
  * corresponding XYZ string, excluding the terminating zero! That is,
  * strlen(XYZ) == len_XYZ, and the memory allocated for string XYZ is
  * equal to (len_XYZ+1)*sizeof(char).
+ *
+ * The reason for all these dynamic allocations over static strings in the
+ * program .text section is my desire to define them by ASCII character
+ * ranges. This system also automates the string length calculations, which
+ * should eliminate some pesky errors in case one modifies these character
+ * sets.
  */
 void init_symbolsets(struct SymbolSets *ss)
 {
@@ -213,8 +222,9 @@ void init_symbolsets(struct SymbolSets *ss)
 	p = ss->iter = mknode("asciip", ss->asciip, &(ss->len_asciip));
 
 	// printable ASCII characters, without space (33-126)
-	ss->asciipns = symset_alloc(syms + 1, len - 1);
-	ss->len_asciipns = len - 1;
+	len = fill_ascii_range(syms, '!', '~');
+	ss->asciipns = symset_alloc(syms, len);
+	ss->len_asciipns = len;
 	p = list_append(p, mknode("asciipns", ss->asciipns, &(ss->len_asciipns)));
 
 	// numbers 0-9 (ASCII 48-57)
@@ -275,6 +285,22 @@ void init_symbolsets(struct SymbolSets *ss)
 	ss->punct = symset_alloc(syms, len);
 	ss->len_punct = len;
 	p = list_append(p, mknode("punct", ss->punct, &(ss->len_punct)));
+}
+
+/* Free the memory allocated for predefined symbol sets. They are only used
+ * during the program setup, after which they may be freed.
+ */
+void free_symbolsets(struct SymbolSets *ss)
+{
+	struct Node *p = ss->iter;
+
+	while (p) {
+		struct Node *q = p->next;
+		debug_print("freeing: 0x%016x: %s = {%s}", p, p->name, p->data);
+		free(p->name); free(p->data); free(p);
+		p = q;
+	}
+	ss->iter = NULL;
 }
 
 /* Replace characters from the start of the string dest with the ASCII values
@@ -427,14 +453,14 @@ size_t append_symbols(struct Configuration *conf, const char *src)
 {
 	size_t len = strlen(src);
 		debug_print("%s(%s) len=%zu conf->len=%zu\n", __func__, src, len, conf->len_symbols);
-		debug_print(" before realloc:     &symbols=0x%012x      symbols={%s}\n", conf->symbols, conf->symbols);
+		debug_print(" before realloc:     &symbols=0x%016x      symbols={%s}", conf->symbols, conf->symbols);
 
 	char *new_symbols = realloc(conf->symbols, (conf->len_symbols + len + 1) * sizeof(char));
-		//debug_print(" after realloc (UB): &symbols=0x%012x      symbols={%s}\n", conf->symbols, conf->symbols); // undefined
-		debug_print(" after realloc:  &new_symbols=0x%012x  new_symbols={%s}\n", new_symbols, new_symbols);
+		//debug_print(" after realloc (UB): &symbols=0x%016x      symbols={%s}", conf->symbols, conf->symbols); // undefined
+		debug_print(" after realloc:  &new_symbols=0x%016x  new_symbols={%s}", new_symbols, new_symbols);
 	if (new_symbols) {
 		strcat(new_symbols, src);
-		debug_print(" after strcat(new_symbols, src): new_symbols={%s}\n", new_symbols);
+		debug_print(" after strcat(new_symbols, src): new_symbols={%s}", new_symbols);
 		conf->len_symbols += len;
 		conf->symbols = new_symbols;
 		assert(*(conf->symbols + conf->len_symbols) == '\0');  // no +1 here!
@@ -443,7 +469,7 @@ size_t append_symbols(struct Configuration *conf, const char *src)
 		free(conf->symbols); // reallocation failed, so symbols wasn't freed
 		control(fatal, "memory allocation failed");
 	}
-		debug_print(" end of function: len=%zu conf->len=%zu conf->symbols={%s}\n", len, conf->len_symbols, conf->symbols);
+		debug_print(" end of function: len=%zu conf->len=%zu conf->symbols={%s}", len, conf->len_symbols, conf->symbols);
 	return len;
 }
 
