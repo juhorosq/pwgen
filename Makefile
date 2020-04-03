@@ -1,39 +1,46 @@
 SHELL = /bin/sh
+
+trg        := bin/pwgen
+trg-debug  := bin/pwgen-debug
+trg-test   := bin/pwgen-test
+
+.PHONY: all debug demo test clean mrproper
+all : $(trg) test
+
 CC = gcc
-CFLAGS = -g -O2 -Wall
+CFLAGS = -g -Wall
 
-DEBUGCFLAGS = -g -Og -Wall
-#DEBUGCFLAGS += -DDEBUG_PRINT
-DEBUGCFLAGS += -fsanitize=address
-DEBUGCFLAGS += -fsanitize=undefined
-DEBUGCFLAGS += -fsanitize=null
-DEBUGCFLAGS += -fsanitize=return
-DEBUGCFLAGS += -fsanitize=bounds
-DEBUGCFLAGS += -fsanitize=signed-integer-overflow
-DEBUGCFLAGS += -fsanitize=object-size
-DEBUGCFLAGS += -fsanitize=enum
+$(trg)       : CFLAGS += -O2 -DNDEBUG
+$(trg-test)  : CFLAGS += $(sanitizers)
+$(trg-debug) : CFLAGS += -Og -DDEBUG_PRINT $(sanitizers)
 
-debug_bin = pwgen-debug
-demo_bin  = $(debug_bin)
+sanitizers =
+sanitizers += -fsanitize=address
+sanitizers += -fsanitize=undefined
+sanitizers += -fsanitize=null
+sanitizers += -fsanitize=return
+sanitizers += -fsanitize=bounds
+sanitizers += -fsanitize=signed-integer-overflow
+sanitizers += -fsanitize=object-size
+sanitizers += -fsanitize=enum
 
-pwgen : pwgen.c
-	$(CC) -o $@ -DNDEBUG $(CFLAGS) $<
 
-$(debug_bin) : pwgen.c
-	$(CC) -o $@ $(DEBUGCFLAGS) $<
+$(trg) : pwgen.c
+	$(CC) -o $@ $(CFLAGS) $<
+$(trg-test) : pwgen.c
+$(trg-debug) : pwgen.c
+	$(CC) -o $@ $(CFLAGS) $<
 
-.PHONY: debug demo
-debug : $(debug_bin)
-demo : $(demo_bin)
-	./$(demo_bin) -v
-	./$(demo_bin) --help
-	./$(demo_bin)
-	./$(demo_bin) -l 16 -c 3
-	for i in 1 2 3; do ./$(demo_bin) -l 16 -c 1; done
-	for i in 1 2 3; do ./$(demo_bin) -l 16 -c 1 --random-seed=no_such_file 2>/dev/null; done
-	./$(demo_bin) -l 16 -c 1 --random-seed=no_such_file
-	./$(demo_bin) --symbols=num
-	./$(demo_bin) --count 10 --length=20 -Snum -- -+= .:
-	./$(demo_bin) -l 50 -c 10 -S ALPHA -S ALPHA -S alpha  # 2/3rds uppercase, 1/3rd lowercase
-	./$(demo_bin) -l 10 -c 20 ________x  # One x per word (on average)
-	time ./$(demo_bin) -l 11 -c 79000000 -r/dev/zero " Hello" | grep "Hello Hello"  # should take about 10 seconds
+debug : $(trg-debug)
+
+demo : $(trg)
+	./run-demo.sh $<
+
+test : $(trg-test)
+	./run-tests.sh $<
+
+clean :
+	rm -f $(trg-debug)
+
+mrproper : clean
+	rm -f $(trg) $(trg-test)

@@ -1,5 +1,4 @@
-pwgen
-pwgen-*
+bin/
 
 # Prerequisites
 *.d
