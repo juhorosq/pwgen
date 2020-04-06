@@ -111,7 +111,7 @@ int main(int argc, char **argv)
 	char *password = calloc(conf.pwlen + 1, sizeof(*password)); // calloc (+1) ensures zero termination
 	for (int i = 0 ; i < conf.pwcount ; ++i) {
 		str_randomize(password, conf.pwlen, conf.active_symbols, conf.len_active_symbols);
-		printf("%s\n", password);
+		puts(password);
 	}
 	free(password);
 	free(conf.active_symbols);
@@ -121,27 +121,17 @@ int main(int argc, char **argv)
 
 
 /* Overwrite the first n characters of str with random characters from
- * the symbols string, and set the n+1st character of str to '\0'.
+ * the beginning (first len_symbols characters) of the symbols string.
  *
  * The appearance of every character from symbols is equally likely; if a
  * character is repeated in symbols string, it is twice as likely to appear in
  * str, etc.
- *
- * If you want to guarantee that none of the first n characters will be '\0',
- * just make sure that len_symbols == strlen(symbols), e.g., by using
- * strlen(symbols) as the last argument.
- * We avoid doing this in the function body to make it easier for the compiler
- * to optimize; I'm not sure if this has any practical performance effect.
- * This guarantee should be in effect anyways, unless the user somehow manages
- * to sneak in a mid-string '\0' through command line options, or I screwed
- * up my string handling.
  */
 char *str_randomize(char *str, size_t char_count, const char *symbols, size_t len_symbols)
 {
 	for (size_t i = 0 ; i < char_count ; ++i) {
 		str[i] = symbols[rand_lt(len_symbols)];
 	}
-	str[char_count] = '\0';
 
 	return str;
 }
